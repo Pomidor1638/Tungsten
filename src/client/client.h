@@ -5,11 +5,15 @@
 #ifndef MEGAGAME_CLIENT_H
 #define MEGAGAME_CLIENT_H
 
+#include "../common/common.h"
+
 #include "window/window.h"
 #include "audio/audio.h"
 #include "input/input.h"
-#include "render/render.h"
+#include "renderer/renderer.h"
 #include "../server/server.h"
+
+#include "state/state.h"
 
 class Client
 {
@@ -18,38 +22,40 @@ public:
     int exec();
 
 private:
-
-    // modules
-    Server* inner_server = nullptr;
-    Window* window       = nullptr;
-    Audio * audio        = nullptr;
-    Render* renderer     = nullptr;
-    Input * input        = nullptr;
-
-    // timing
-    uint64_t   cur_time = 0;
-    uint64_t  last_time = 0;
+    // Modules
+    Window* window = nullptr;
+    Audio* audio = nullptr;
+    Renderer* renderer = nullptr;
+    Input* input = nullptr;
+    Server* local_server = nullptr;
+    // Timing
+    uint64_t cur_time = 0;
+    uint64_t last_time = 0;
     uint64_t delta_time = 0;
     double   frac_delta = 0;
-
-    // config
+    // GameState
     bool debug = false;
+    int  client_id = -1;
 
-    // main 
+    // Main State
     bool running = false;
 
     void updateTime();
     void processEvents();
     void processEvent(const SDL_Event& e);
 
-    void render();
     void processInput();
     void processNet();
 
+    void render();
+
     void loadMapFromDisk(const std::string& path);
 
-    float speed = 100.0f;
+    glm::vec3 make_wishdir(glm::vec3 angles);
+    void update_angles(glm::vec3& angles);
 
+    GameState game_state{};
+    
 public:
 
     Client(int argc, char* argv[]);
@@ -58,7 +64,6 @@ public:
     Client() = delete;
     Client(const Client&) = delete;
     Client(Client&&) = delete;
-
 };
 
 #endif 

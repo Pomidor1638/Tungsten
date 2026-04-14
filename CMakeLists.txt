@@ -15,19 +15,18 @@ set(SOURCES
     
     src/client/audio/audio.cpp
     src/client/input/input.cpp
-    src/client/render/render.cpp
+    src/client/renderer/renderer.cpp
     src/client/window/window.cpp
     src/client/client.cpp
 
-    src/server/server.cpp
+    
 
     src/common/common.cpp
-    src/common/allocator/allocator.cpp
     src/common/bspfile/bspfile.cpp
     src/common/cmd/console.cpp
     src/common/logger/logger.cpp
     src/common/math/math.cpp
-    src/common/net/net.cpp
+    
     src/common/system/system.cpp
     src/common/system/tinyfiledialogs.c
     
@@ -43,10 +42,13 @@ set(SOURCES
 set(HEADERS
     src/client/audio/audio.h
     src/client/input/input.h
-    src/client/render/render.h
+    src/client/renderer/renderer.h
     src/client/window/window.h
     src/client/client.h
+
     src/server/server.h
+    src/server/prototype.h
+
     src/common/common.h
     src/common/allocator/allocator.h
     src/common/bspfile/bspfile.h
@@ -72,7 +74,8 @@ set(HEADERS
     src/imgui/imstb_truetype.h   
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+
+add_executable(${PROJECT_NAME} ${SOURCES}  "src/server/server.h" "src/server/server.cpp" "src/client/world/world.cpp" "src/client/world/world.h" "src/client/state/state.h")
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/src

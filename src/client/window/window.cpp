@@ -1,4 +1,5 @@
 #include "Window.h"
+#include <stdexcept>
 
 // ==================== Конструкторы ====================
 
@@ -31,7 +32,7 @@ Window::~Window()
 }
 
 
-void Window::processEvent(SDL_Event& event)
+void Window::processEvent(const SDL_Event& event)
 {
     switch (event.type)
     {

@@ -10,13 +10,13 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <bitset>
 
 typedef unsigned char byte;
 
 #define PLANENUM_LEAF               -1
 #define MAX_MAP_HULLS                4
 #define MAX_MAP_MODELS             256
-#define MAX_MAP_BRUSHES           4096
 #define MAX_MAP_ENTITIES          1024
 #define MAX_MAP_ENTSTRING        65536
 
@@ -31,10 +31,9 @@ typedef unsigned char byte;
 #define MAX_MAP_PORTALINDEXES   256000
 #define MAX_MAP_TEXINFO           4096
 #define MAX_TEXTURE_NAME	       128
-#define MIP_MAP_LEVELS               4
 #define	MAX_MAP_MIPTEX		  0xF00000
-#define	MAX_MAP_LIGHTING	  0x100000
-#define	MAX_MAP_VISIBILITY	  0x100000
+#define	MAX_MAP_LIGHTING	  0x800000
+#define	MAX_MAP_VISIBILITY	  0x800000
 
 #define BSPVERSION            144
 
@@ -70,7 +69,6 @@ typedef uint32_t dface_index;
 typedef uint32_t dportal_index;  
 typedef int32_t  dtexinfo_index;
 typedef uint32_t dvec3_index;    
-
 
 typedef float dvec_t;
 
@@ -175,8 +173,8 @@ typedef struct
 } dleaf_t;
 
 typedef struct {
-	float vecs[2][4];
-	int texnum;
+	float    vecs[2][4];
+	uint32_t texnum;
 	uint32_t flags;
 } dtexinfo_t;
 
@@ -184,18 +182,55 @@ typedef struct {
 
 typedef struct
 {
-	int			numtex;
-	int			dataofs[];		// [numtex]
+	uint32_t numtex;
+	uint32_t dataofs[];		// [numtex]
 } dtexturelump_t;
 
 typedef struct dtexture_s
 {
 	char		name[MAX_TEXTURE_NAME];
-	unsigned	width, height;
+	uint32_t	width, height;
 	byte		colortype;
+	byte        data[];
 } dtexture_t;
 
+// lighting
+typedef struct dlightlump_s
+{
+	uint32_t  numlight_masks;
+	uint32_t  dataofs[];
+} dlightlump_t;
+
+
 #pragma pack(pop) 
+
+
+struct BSPTexture
+{
+	std::string name;
+	int width, height;
+	byte color_type;
+	std::vector<byte> data{};
+};
+
+struct BSPLightMask
+{
+	int width, height;
+	byte light_type;
+	std::vector<byte> data;
+};
+
+struct BSPVisibility // PVS
+{
+	int size;
+	std::vector<bool> PVS;
+};
+
+struct BSPHearing // PHS
+{
+	int size;
+	std::vector<bool> PHS;
+};
 
 
 struct BSPMap
@@ -212,15 +247,22 @@ struct BSPMap
 	std::vector<dmodel_t>              models{};
 	std::vector<dtexinfo_t>     texture_infos{};
 
-	std::vector<byte>    texture_block{};
-	std::vector<byte>   lighting_block{};
-	std::vector<byte> visibility_block{};
+	std::vector<BSPTexture>          textures{};
+	std::vector<BSPLightMask>        lighting{};
+	std::vector<BSPVisibility>     visibility{};
+
 
 	BSPMap() = default;
 	virtual ~BSPMap() = default;
 
+	bool parse(const std::vector<byte>& mem_block);
+	void clear();
 
-	int parse(const std::vector<byte>& mem_block);
+private:
+	bool parse_textures(const std::vector<byte>& mem_block);
+	bool parse_visibility(const std::vector<byte>& mem_block);
+	bool parse_lighting(const std::vector<byte>& mem_block);
+	bool parse_hearing(const std::vector<byte>& mem_block);
 };
 
 

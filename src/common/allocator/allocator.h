@@ -6,14 +6,15 @@
 #include <new>
 #include <cstdint>
 
-class LinearAllocator {
+class LinearAllocator final
+ {
 public:
     explicit LinearAllocator(std::size_t size) 
     {
         allocate_block(size);
     }
-
-    ~LinearAllocator() {
+    ~LinearAllocator() 
+    {
         destroy_all();
         free_block();
     }

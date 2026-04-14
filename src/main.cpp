@@ -57,7 +57,6 @@ std::ofstream log_file;
 void Init_Logger()
 {
     gLog.addStream(std::cout);
-
     log_file.open("log.log");
     if (log_file.is_open())
     {
@@ -75,7 +74,7 @@ void Init(int argc, char* argv[])
 {
     Init_API();
     Init_Logger();
-    constexpr size_t HUNK_SIZE = (size_t(1) << 20);
+    constexpr size_t HUNK_SIZE = (size_t(1) << 22);
     Init_Hunk(HUNK_SIZE);
 }
 

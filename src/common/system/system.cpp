@@ -3,60 +3,63 @@
 #include <fstream>
 #include "tinyfiledialogs.h"
 
-namespace {
-    namespace {
-        bool ShowSDLMessageBoxInternal(SDL_MessageBoxFlags type,
-            const std::string& title,
-            const std::string& message,
-            const std::string& checkboxText,
-            bool defaultChecked) {
+namespace 
+{
+    bool ShowSDLMessageBoxInternal
+    (
+        SDL_MessageBoxFlags type,
+        const std::string& title,
+        const std::string& message,
+        const std::string& checkboxText,
+        bool defaultChecked
+    ) {
 
-            // Создаем текст с чекбоксом
-            std::string checkboxStatus = defaultChecked ? "[X] " : "[ ] ";
-            std::string fullMessage;
+        std::string checkboxStatus = defaultChecked ? "[X] " : "[ ] ";
+        std::string fullMessage;
 
-            if (checkboxText.empty()) {
-                // Без чекбокса
-                fullMessage = message;
-            }
-            else {
-                // С чекбоксом - ОДНА строка с чекбоксом
-                fullMessage = message;
-                // Добавляем чекбокс только если не пусто
-                if (!checkboxText.empty()) {
-                    fullMessage += "\n" + checkboxStatus + checkboxText;
-                }
-            }
-
-            // Создаем кнопки
-            const SDL_MessageBoxButtonData buttons[] = {
-                { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "OK" },
-                { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" }
-            };
-
-            SDL_MessageBoxData msgbox = {
-                type,
-                NULL,
-                title.c_str(),
-                fullMessage.c_str(),  // Используем наш сформированный текст
-                type == SDL_MESSAGEBOX_ERROR ? 1 : SDL_arraysize(buttons),
-                buttons,
-                NULL
-            };
-
-            int buttonID = 0;
-            if (SDL_ShowMessageBox(&msgbox, &buttonID) < 0) {
-                // Ошибка SDL - возвращаем дефолтное значение
-                return defaultChecked;
-            }
-
-            // Возвращаем состояние чекбокса только если нажали OK
-            return (buttonID == 1) ? defaultChecked : false;
+        if (checkboxText.empty())
+        {
+            fullMessage = message;
         }
+        else
+        {
+            fullMessage = message;
+            if (!checkboxText.empty()) 
+            {
+                fullMessage += "\n" + checkboxStatus + checkboxText;
+            }
+        }
+
+        const SDL_MessageBoxButtonData buttons[] =
+        {
+            { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "OK" },
+            { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" }
+        };
+
+        SDL_MessageBoxData msgbox =
+        {
+            type,
+            NULL,
+            title.c_str(),
+            fullMessage.c_str(),
+            type == SDL_MESSAGEBOX_ERROR ? 1 : SDL_arraysize(buttons),
+            buttons,
+            NULL
+        };
+
+        int buttonID = 0;
+        if (SDL_ShowMessageBox(&msgbox, &buttonID) < 0)
+        {
+            return defaultChecked;
+        }
+
+        return (buttonID == 1) ? defaultChecked : false;
     }
 }
 
-bool ShowCheckboxInfo(
+
+bool ShowCheckboxInfo
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
@@ -65,7 +68,8 @@ bool ShowCheckboxInfo(
     return ShowSDLMessageBoxInternal(SDL_MESSAGEBOX_INFORMATION, title, message, checkboxText, defaultChecked);
 }
 
-bool ShowCheckboxWarning(
+bool ShowCheckboxWarning
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
@@ -75,7 +79,8 @@ bool ShowCheckboxWarning(
         title, message, checkboxText, defaultChecked);
 }
 
-bool ShowCheckboxError(
+bool ShowCheckboxError
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
@@ -85,7 +90,8 @@ bool ShowCheckboxError(
         title, message, checkboxText, defaultChecked);
 }
 
-bool ShowCheckboxQuestion(
+bool ShowCheckboxQuestion
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
@@ -112,9 +118,13 @@ std::list<std::filesystem::path> getFiles(const std::filesystem::path& dir)
                 files.push_back(entry.path());
             }
         }
-        files.sort([](const auto& a, const auto& b) {
-            return a.filename().string() < b.filename().string();
-            });
+        files.sort
+        (
+            [](const auto& a, const auto& b) 
+            {
+                return a.filename().string() < b.filename().string();
+            }
+        );
 
     }
     catch (...)
@@ -150,8 +160,6 @@ std::vector<byte> load_file(const std::string& path)
     return buffer;
 }
 
-
-
 std::string choose_file()
 {
     const char* lFilterPatterns[1] = { "*.bsp" };
@@ -166,7 +174,7 @@ std::string choose_file()
     );
 
     if (!lSelectedFile) {
-        return ""; // Пользователь нажал "Отмена"
+        return ""; 
     }
 
     return std::string(lSelectedFile);

@@ -9,28 +9,32 @@
 
 typedef uint8_t byte;
 
-bool ShowCheckboxInfo(
+bool ShowCheckboxInfo
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
     bool defaultChecked = false
 );
 
-bool ShowCheckboxWarning(
+bool ShowCheckboxWarning
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
     bool defaultChecked = false
 );
 
-bool ShowCheckboxError(
+bool ShowCheckboxError
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
     bool defaultChecked = false
 );
 
-bool ShowCheckboxQuestion(
+bool ShowCheckboxQuestion
+(
     const std::string& title,
     const std::string& message,
     const std::string& checkboxText,
