@@ -10,7 +10,7 @@ namespace tungsten::server
     void Server::process_net_incoming_conn_req()
     {
         auto* p = reinterpret_cast<protocol::packet*>(net_msg.data);
-        auto* cn_req = reinterpret_cast<protocol::packet_conn_req*>(p);
+        auto* cn_req = reinterpret_cast<protocol::packet_conn_req*>(p->payload);
 
         // protocol::validate shouldn't pass wrong version. Why it thing here? 
         //if (cn_req->client_protocol_version) 
