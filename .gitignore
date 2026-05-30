@@ -48,9 +48,11 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+compile_commands.json
 *.cmake.user
 
 # vcpkg
+.deps/
 vcpkg_installed/
 
 # OS

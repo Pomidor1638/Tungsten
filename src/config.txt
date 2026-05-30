@@ -1,0 +1,10 @@
+[ignore]
+build
+.git
+.vs
+.idea
+*.obj
+*.pdb
+*.exe
+imgui
+config.txt

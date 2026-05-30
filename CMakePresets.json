@@ -1,0 +1,108 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-vs",
+      "displayName": "Windows Visual Studio",
+      "description": "Uses the Visual Studio generator on Windows. Does not require Ninja in PATH.",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "architecture": "x64",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-clang-ninja",
+      "displayName": "Windows Clang Ninja",
+      "description": "Uses standalone clang-cl, lld-link, Ninja, and vcpkg. This is the default VS Code preset.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "environment": {
+        "PATH": "C:/Program Files/CMake/bin;C:/Program Files/LLVM/bin;$env{LOCALAPPDATA}/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang-cl.exe",
+        "CMAKE_LINKER": "C:/Program Files/LLVM/bin/lld-link.exe",
+        "CMAKE_MAKE_PROGRAM": "$env{LOCALAPPDATA}/Microsoft/WinGet/Packages/Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe/ninja.exe",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Portable single-config Ninja build for systems where Ninja is installed.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "Ninja Release",
+      "description": "Portable single-config Ninja release build for systems where Ninja is installed.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-vs-debug",
+      "displayName": "Windows Visual Studio Debug",
+      "configurePreset": "windows-vs",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-vs-release",
+      "displayName": "Windows Visual Studio Release",
+      "configurePreset": "windows-vs",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-clang-ninja",
+      "displayName": "Windows Clang Ninja",
+      "configurePreset": "windows-clang-ninja"
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "configurePreset": "ninja-debug"
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "Ninja Release",
+      "configurePreset": "ninja-release"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+	"version": "1.0",
+	"world_name": "TungstenTest",
+	
+	"resources": {
+		"external": 
+		[
+			{ 
+				"type": "tpk", 
+				"alias": "external_Base", 
+				"path": "path/to/external_resources.tpk" 
+			},
+		],
+		"embedded": [
+			{ 
+				"type": "tpk", 
+				"alias": "embedded_Base", 
+				"path": "path/to/external_resources.tpk" 
+			}
+		]
+	}
+	
+	"brushes": [
+		{
+			"id": 0,
+			"faces": [
+				{
+					"plane": [0.0, 0.0, 1.0, 64.0],
+					"texinfo": {
+						"texture": "external_Base/textures/brick01",
+						"vecs_context": {
+							"ortho": false,
+							"rotation": 0.0
+						}
+					}
+				},
+				{
+					"plane": [0.0, 0.0, -1.0, -64.0],
+					"texinfo": {
+						"texture": "embedded_Base/textures/brick01",
+						"vecs": [
+							[1.0, 0.0, 0.0, 1.0],
+							[0.0, 1.0, 0.0, 1.0]
+						],
+					}
+				}
+			]
+		}
+	],
+	
+	"visgroups": [
+		{
+			"name": "first visgroup",
+			"brushes": [ 0 ]
+		}
+	],
+	
+	"entities": [
+		{
+			"id"        : 0,
+			"name"      : "Start",
+			"classname" : "info_player_start",
+			"origin"    : [0.0, 128.0, 0.0],
+			
+			"rotation"  : [1.0, 0.0, 0.0, 0.0]
+		},
+		
+		{
+			"id"        : 1,
+			"name"      : "global light static",
+			"classname" : "light_base_static",
+			"origin"    : [0.0, 500.0, 0.0],
+			
+			"intensity" : [1.0, 1.0, 1.0],
+			"linear"    : 1.0,
+			"quadratic" : 1.0
+		}
+	]
+}
