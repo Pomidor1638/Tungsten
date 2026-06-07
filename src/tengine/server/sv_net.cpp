@@ -43,7 +43,11 @@ namespace tungsten::server
     void Server::process_net_incoming_conn_cancel()
     {}
     void Server::process_net_incoming_conn_ready()
-    {}
+    {
+        auto* p = reinterpret_cast<protocol::packet*>(&net_msg.data);
+        auto* cn_ready = reinterpret_cast<protocol::packet_conn_ready*>(p->payload);
+        
+    }
     void Server::process_net_incoming_conn_req_files()
     {}
     void Server::process_net_incoming_conn_ack_file()

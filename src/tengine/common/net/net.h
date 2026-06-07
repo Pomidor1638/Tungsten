@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include "../../../common/utils/container/ring_queue/ring_queue.h"
+#include "../../../common/utils/container/ring_queue.h"
 
 
 namespace tungsten::net

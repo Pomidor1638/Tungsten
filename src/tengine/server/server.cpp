@@ -1,13 +1,8 @@
 
 #include "server.h"
-#include <algorithm>
-#include <cstring>
-#include <cmath>
 
 namespace tungsten::server
-{
-
-    
+{   
     Server::Server()
     {}
     Server::~Server()
@@ -49,29 +44,25 @@ namespace tungsten::server
 
         return network->init();
     }
-
-    void Server::entities_reset()
+    
+    int Server::register_player()
     {
-        entities_count      = 0;
-        for (auto& e : entities)
-            e.id = -1;
+        return -1;
     }
 
-    void Server::players_reset()
-    {        
-        max_players_count   = 0;
-        players_count       = 0;
-        free_player_ptr     = 0;
-
-        for (auto& p : players)
-            p.active = false;
+    void Server::remove_player (int player_id)
+    {
+    }
+    
+    void Server::process_usercmd(int player_id, protocol::cl_usercmd cmd)
+    {
     }
     
     
     bool Server::sv_init()
     {
-        entities_reset();
-        players_reset();
+        entities.clear();
+        players.clear();
 
         active = false;
         return true;
@@ -88,8 +79,8 @@ namespace tungsten::server
 
     void Server::start(const Config& cfg)
     {
-        entities_reset();
-        players_reset();
+        entities.clear();
+        players.clear();
 
         active = true;
     }
@@ -109,9 +100,9 @@ namespace tungsten::server
         server_time += dt;
         server_tick++;
 
-        for (uint32_t i = 0; i < entities_count; ++i)
+        for (auto& e : entities)
         {
-            think_entity(entities[i]);
+            think_entity(e);
         }
         
         process_net();

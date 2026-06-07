@@ -95,12 +95,18 @@ namespace tungsten::client
         auto* conn_ack =
             reinterpret_cast<protocol::packet_conn_ack*>(packet->payload);
 
+        if (conn_ack->server_nonce != client_state.client_nonce)
+        {
+            client_state.connection_state = protocol::client_state::disconnected;
+            return;
+        }
+
         if (conn_ack->need_files_check)
         {
             client_state.connection_state = protocol::client_state::checking_files;
             return;
         }
-
+        
         client_state.connection_state = protocol::client_state::loading_resources;
         process_net_loading_resources();
     }
@@ -227,6 +233,7 @@ namespace tungsten::client
         net::net_message msg;
 
         protocol::packet_conn_req conn_req = packet_builder.build_conn_req();
+        client_state.client_nonce = conn_req.client_nonce;
 
         if (!packet_builder.build(packet, protocol::packet_type::conn_req, &conn_req, sizeof(conn_req)))
         {

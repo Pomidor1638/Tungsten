@@ -180,7 +180,7 @@ function(tg_link_glm_if_available TARGET_NAME)
 endfunction()
 
 function(tg_add_executable TARGET_NAME)
-    cmake_parse_arguments(ARG "" "FOLDER;NEEDS_SDL;NEEDS_OPENGL" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARG "EXCLUDE_FROM_ALL" "FOLDER;NEEDS_SDL;NEEDS_OPENGL" "SOURCES" ${ARGN})
 
     set(target_sources ${ARG_SOURCES})
     list(REMOVE_DUPLICATES target_sources)
@@ -192,7 +192,11 @@ function(tg_add_executable TARGET_NAME)
         message(WARNING "${TARGET_NAME}: no main.cpp found for this target, using generated stub: ${stub_main}")
     endif()
 
-    add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h")
+    if(ARG_EXCLUDE_FROM_ALL)
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h")
+    else()
+        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h")
+    endif()
 
     tg_apply_common_settings(${TARGET_NAME})
     tg_link_glm_if_available(${TARGET_NAME})
@@ -239,6 +243,11 @@ tg_collect_sources(TG_TMAPEDITOR_SOURCES
 tg_collect_sources(TG_TWADEDITOR_SOURCES
     "editor/twadeditor"
     "twadeditor"
+)
+
+tg_collect_sources(TG_TEST_SOURCES
+    "test"
+    "common/formats"
 )
 
 # =============================================================================
@@ -309,6 +318,22 @@ tg_add_executable(twadeditor
     NEEDS_SDL TRUE
     NEEDS_OPENGL TRUE
     SOURCES ${TG_TWADEDITOR_ALL_SOURCES}
+)
+
+# =============================================================================
+# 5) test
+# =============================================================================
+
+set(TG_TEST_ALL_SOURCES
+    ${TG_TEST_SOURCES}
+)
+
+tg_add_executable(test
+    EXCLUDE_FROM_ALL
+    FOLDER "tests"
+    NEEDS_SDL FALSE
+    NEEDS_OPENGL FALSE
+    SOURCES ${TG_TEST_ALL_SOURCES}
 )
 
 # =============================================================================

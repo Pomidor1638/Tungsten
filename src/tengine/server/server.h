@@ -3,8 +3,8 @@
 #include "../../common/formats/protocol/protocol.h"
 #include "../common/net/net.h"
 #include "protocol/protocol.h"
+#include "../../common/utils/container/fixed_pool.h"
 #include <glm/glm.hpp>
-#include <bitset>
 
 namespace tungsten::server
 {
@@ -12,13 +12,6 @@ namespace tungsten::server
     constexpr int MAX_SERVER_ENTITIES = 64;
     constexpr int MAX_SERVER_PLAYERS  = 16;
     constexpr int MAX_PLAYERNAME_SIZE = 32;
-
-    enum class EntityClassId
-    {
-        None,
-        Player,
-        DebugRotator,
-    };
 
     class Server
     {
@@ -56,7 +49,7 @@ namespace tungsten::server
 
         
         //--------------//
-        // Networking   //
+        // Network      //
         //--------------//
 
         protocol::packet_builder    packet_builder  = {};
@@ -93,22 +86,25 @@ namespace tungsten::server
         // Entities   //
         //------------//
 
+        template<class T, size_t pool_capacity>
+        using fx_pool = util::container::fixed_pool<T, pool_capacity>;
+
         struct sv_entity
         {
-            int id = 0;
-            bool active = false;
-            EntityClassId           class_id        = EntityClassId::None;
-            protocol::geometry_type geometry_type   = protocol::geometry_type::none;
+            static constexpr int invalid_entity = -1;
+            static constexpr int invalid_class_id = -1;
+
+            int id          = invalid_entity;
+            int class_id    = invalid_class_id;
 
             glm::vec3 origin  { 0.0f };
             glm::vec3 angles  { 0.0f };
             glm::vec3 velocity{ 0.0f };
         };
 
-        int         entities_count = 0;
-        sv_entity   entities[MAX_SERVER_ENTITIES]{};
+        int max_entities_count = 0;
+        fx_pool<sv_entity, MAX_SERVER_ENTITIES> entities{};
 
-        void        entities_reset();
         sv_entity*  spawn_entity();
         void        think_entity(sv_entity& entity);
         
@@ -116,26 +112,36 @@ namespace tungsten::server
         // Players    //
         //------------//
 
-        struct sv_player
+        struct sv_player_connection_state
         {
-            bool    active = false;
-            int     ent_id  = -1; // entities[ent_id]
-            int     peer_id = -1;
-            protocol::usercmd cmd{};    
             protocol::server_client_stage stage = protocol::server_client_stage::disconnected;
         };
 
-        int         max_players_count   = 0;
-        int         players_count       = 0;
-        int         free_player_ptr     = 0;
-        sv_player   players[MAX_SERVER_PLAYERS]{};
+        struct sv_player_input_state
+        {
+            protocol::cl_usercmd cmd{};    
+            protocol::console_command console_cmd{};
+        };
 
-        void        players_reset();
-        int         register_player(protocol::fixed_string<MAX_PLAYERNAME_SIZE> player_name);
-        void        release_player (int player_id);
-        void        process_usercmd(int player_id, protocol::usercmd cmd);
-        
-        
+        struct sv_player
+        {
+            static constexpr int no_player = -1;
+
+            int     ent_id  = sv_entity::invalid_entity; // entities[ent_id]
+            int     peer_id = net      ::invalid_peer;
+
+            sv_player_connection_state connection_state{};
+        };
+
+        int         max_players_count   = 0;
+        fx_pool<sv_player, MAX_SERVER_PLAYERS> players;
+
+        int         register_player();
+        void        remove_player(int player_id);
+
+        void        process_usercmd(int player_id, protocol::cl_usercmd cmd);        
+        void        process_console_cmd(int player_id, protocol::console_command cmd);
+
         protocol::packet_sv_snapshot makeSnapshot() const;
     };
 }

@@ -66,6 +66,7 @@ namespace tungsten::client
         world::cl_world world{};
 
         // Connection state
+        uint64_t  client_nonce = 0;
         protocol::client_fsm_event  cl_fsm_event     = protocol::client_fsm_event::none;
         protocol::client_state      connection_state = protocol::client_state    ::disconnected;
     };
