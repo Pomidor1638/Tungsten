@@ -84,6 +84,7 @@ namespace tungsten::protocol
 
 	struct packet_conn_cancel
 	{
+		uint64_t client_nonce;
 	};
 
 	struct packet_conn_accept
@@ -112,7 +113,6 @@ namespace tungsten::protocol
 		error,
 
 	// server events
-		connection_requested,
 		connection_canceled,
 
 	// client events
@@ -276,6 +276,8 @@ namespace tungsten::protocol
 		
 		void on_recv_packet(const packet& p);		
 		bool connect_to(uint64_t nonce);
+
+		// TODO: need to fix cancel conqurency
 		bool cancel();
 
 	private:
@@ -290,7 +292,7 @@ namespace tungsten::protocol
 
 		// timeouts
 		uint64_t last_recv_timestamp_us = 0;
-		uint64_t retry_time = 500'000;
+		uint64_t retry_time = 5;
 		int retry_count = 5;
 		int tries_count = 0;
 
@@ -310,17 +312,17 @@ namespace tungsten::protocol
 		void emit_connection_accepted(bool need_filesync);
 		void emit_connection_rejected(reject_reason reason);
 		
-		void on_recv_connecting(const packet& p);
-			void recv_conn_accept(const packet& p);
-			void recv_conn_reject(const packet& p);
+		bool on_recv_connecting(const packet& p);
+			bool recv_conn_accept(const packet& p);
+			bool recv_conn_reject(const packet& p);
 
-		void on_recv_loading(const packet& p);
-			void on_loading_filesync(const packet& p);
-			void on_loading_level_info(const packet& p);
-			void on_loading_initial_snapshot(const packet& p);
+		bool on_recv_loading(const packet& p);
+			bool on_loading_filesync(const packet& p);
+			bool on_loading_level_info(const packet& p);
+			bool on_loading_snapshot_sync(const packet& p);
 
-		void on_recv_active(const packet& p);
-		void on_recv_disconnecting(const packet& p);
+		bool on_recv_active(const packet& p);
+		bool on_recv_disconnecting(const packet& p);
 	};
 
 
@@ -333,7 +335,6 @@ namespace tungsten::protocol
 		none = 0,
 
 		empty,
-		waiting_conn_result,
 		loading,
 		active,
 		disconnecting
@@ -397,8 +398,10 @@ namespace tungsten::protocol
 		bool poll_event(event& e);
 		void on_recv_packet(const packet& p);
 
-		bool accept(uint64_t nonce, bool need_filesync);
-		bool reject(reject_reason reason);
+		bool accept(uint64_t cl_nonce, uint64_t sv_nonce, bool need_filesync);
+
+		static bool is_conn_req(const packet& p);
+		static bool reject(packet& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason);
 
 		void disconnect();
 
@@ -408,7 +411,6 @@ namespace tungsten::protocol
 		void emit_error(event_error_type type);
 
 		void emit_connection_canceled();
-		void emit_conn_requested();
 
 		util::container::ring_queue<event, 8> events;
 		
@@ -419,7 +421,7 @@ namespace tungsten::protocol
 
 		// timeouts
 		uint64_t last_recv_timestamp_us = 0;
-		uint64_t retry_time = 500'000;
+		uint64_t retry_time = 5;
 		int retry_count = 5;
 		int tries_count = 0;
 
@@ -430,11 +432,10 @@ namespace tungsten::protocol
 		uint64_t server_nonce = 0;
 		uint64_t client_nonce = 0;
 
-		void on_recv_empty(const packet& p);
-        void on_recv_waiting_conn_result(const packet& p);
-		void on_recv_loading(const packet& p);
-		void on_recv_active(const packet& p);
-		void on_recv_disconnecting(const packet& p);
+		//bool on_recv_empty(const packet& p);
+		bool on_recv_loading(const packet& p);
+		bool on_recv_active(const packet& p);
+		bool on_recv_disconnecting(const packet& p);
 
 		server_main_stage 			main_stage			= server_main_stage			::none;
 		server_loading_stage 		loading_stage		= server_loading_stage		::none;

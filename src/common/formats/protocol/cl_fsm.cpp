@@ -41,8 +41,6 @@ namespace tungsten::protocol
             else
             {
                 emit_error(event_error_type::timeout);
-                
-                reset_timeouts();
                 main_stage = client_main_stage::disconnected;
             }
         }
@@ -119,58 +117,89 @@ namespace tungsten::protocol
     }
 
     
-	void client_fsm::recv_conn_accept(const packet& p)
+	bool client_fsm::recv_conn_accept(const packet& p)
     {
         auto* conn_accept = reinterpret_cast<const packet_conn_accept*>(p.payload);
-        
         server_nonce = conn_accept->server_nonce;
 
         emit_connection_accepted(conn_accept->need_filesync);
-        
-        reset_timeouts();
+
         loading_stage = client_loading_stage::filesync;
         main_stage    = client_main_stage   ::loading;
+        
+        return true;
     }
 
-	void client_fsm::recv_conn_reject(const packet& p)
+	bool client_fsm::recv_conn_reject(const packet& p)
     {
         auto* conn_reject = reinterpret_cast<const packet_conn_reject*>(p.payload);
 
         emit_connection_rejected(conn_reject->reason);
-        
-        reset_timeouts();
         main_stage = client_main_stage::disconnected;
+        
+        return true;
     }
 
-    void client_fsm::on_recv_connecting(const packet& p)
+    bool client_fsm::on_recv_connecting(const packet& p)
     {
-        if (!validate_packet(p, client_nonce))
-            return;
-
-        using enum packet_type;
-        switch (p.header.type) 
+        if (validate_packet(p, client_nonce))
         {
-        case conn_accept:
-            recv_conn_accept(p);
+            using enum packet_type;
+            switch (p.header.type) 
+            {
+            case conn_accept:
+                return recv_conn_accept(p);
+            case conn_reject:
+                return recv_conn_reject(p);
+            default:
+                break;
+            }
+        }
+
+        return false;
+    }
+
+    
+	bool client_fsm::on_loading_filesync(const packet& p)
+    {
+    }
+
+	bool client_fsm::on_loading_level_info(const packet& p)
+    {
+    }
+
+	bool client_fsm::on_loading_snapshot_sync(const packet& p)
+    {
+    }
+
+
+	bool client_fsm::on_recv_loading(const packet& p)
+    {
+        using enum client_loading_stage;
+        switch (loading_stage) 
+        {
+        case filesync:
+            return on_loading_filesync(p);
             break;
-        case conn_reject:
-            recv_conn_reject(p);
-            break;
+        case levelsync:
+            return on_loading_level_info(p);
+		case snapshot_sync:
+            return on_loading_snapshot_sync(p);
         default:
             break;
         }
+
+        return false;
     }
 
-	void client_fsm::on_recv_loading(const packet& p)
+	bool client_fsm::on_recv_active(const packet& p)
     {
-    }
-
-	void client_fsm::on_recv_active(const packet& p)
-    {
+        return false;
     }
     
-	void client_fsm::on_recv_disconnecting(const packet& p)
+	bool client_fsm::on_recv_disconnecting(const packet& p)
     {
+        return false;
     }
 
 	bool client_fsm::cancel()
@@ -182,6 +211,7 @@ namespace tungsten::protocol
 		case loading:
         {
             packet_conn_cancel conn_cancel;
+            conn_cancel.client_nonce = client_nonce;
 
             emit_send(
                 make_packet(
@@ -195,7 +225,6 @@ namespace tungsten::protocol
                 true
             );
 
-            reset_timeouts();
             main_stage = client_main_stage::disconnected;
         }
             return true;
@@ -228,35 +257,42 @@ namespace tungsten::protocol
             true
         );
 
-        reset_timeouts();
         main_stage = connecting;
         return true;
     }
     
 	void client_fsm::on_recv_packet(const packet& p)
     {
-        if (!validate_packet_sizes(p.header))
-            return;
 
-        using enum client_main_stage;
-        switch (main_stage) 
+        bool processed = false;
+
+        if (validate_packet_sizes(p.header))
         {
-        case disconnected:
-            break;
-		case connecting:
-            on_recv_connecting(p);
-            break;
-		case loading:
-            on_recv_loading(p);
-            break;
-		case active:
-            on_recv_active(p);
-            break;
-		case disconnecting:
-            on_recv_disconnecting(p);
-            break;
-        default:
-            break;
+            using enum client_main_stage;
+            switch (main_stage) 
+            {
+            case disconnected:
+                break;
+            case connecting:
+                processed = on_recv_connecting(p);
+                break;
+            case loading:
+                processed = on_recv_loading(p);
+                break;
+            case active:
+                processed = on_recv_active(p);
+                break;
+            case disconnecting:
+                processed = on_recv_disconnecting(p);
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (processed)
+        {
+            reset_timeouts();
         }
     }
 

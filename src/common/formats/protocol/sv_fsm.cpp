@@ -37,8 +37,6 @@ namespace tungsten::protocol
             else
             {
                 emit_error(event_error_type::timeout);
-                
-                reset_timeouts();
                 main_stage = server_main_stage::empty;
             }
         }
@@ -60,7 +58,6 @@ namespace tungsten::protocol
         server_nonce = 0;
         client_nonce = 0;
 
-        reset_timeouts();
         main_stage = server_main_stage::empty;
     }
 
@@ -103,64 +100,60 @@ namespace tungsten::protocol
             }
         );
     }
-
-	void server_fsm::emit_conn_requested()
-    {
-        events.push(
-            event{
-                .type = event_type::connection_requested,
-                .conn_requested{}
-            }
-        );
-    }
     
-	void server_fsm::on_recv_empty(const packet& p)
+	/*bool server_fsm::on_recv_empty(const packet& p)
     {
         if (p.header.type != packet_type::conn_req)
-            return;
+            return false;
 
         auto* conn_req = reinterpret_cast<const packet_conn_req*>(p.payload);
 
         client_nonce = conn_req->client_nonce;
         emit_conn_requested();
 
-        reset_timeouts();
-        main_stage = server_main_stage::waiting_conn_result;
-    }
+        main_stage = server_main_stage::pending_connection;
+        return true;
+    }*/
 
-    void server_fsm::on_recv_waiting_conn_result(const packet& p)
+    /*bool server_fsm::on_recv_pending_connection(const packet& p)
     {
-        // if (p.header.type != packet_type::conn_cancel)
-        //     return;
-
-        // auto* conn_cancel = reinterpret_cast<const packet_conn_cancel*>(p.payload);
-        // if (conn_cancel->client_nonce != client_nonce)
-        //     return;
-        
-        // emit_connection_canceled();
-
-        // reset_timeouts();
-        // main_stage = server_main_stage::empty;
-    }
-
-	void server_fsm::on_recv_loading(const packet& p)
-    {
-    }
-
-	void server_fsm::on_recv_active(const packet& p)
-    {
-    }
-
-	void server_fsm::on_recv_disconnecting(const packet& p)
-    {
-    }
-
-    bool server_fsm::accept(uint64_t nonce, bool need_filesync)
-    {
-        if (main_stage != server_main_stage::waiting_conn_result)
+        if (p.header.type != packet_type::conn_cancel)
             return false;
 
-        server_nonce = nonce;
+        auto* conn_cancel = reinterpret_cast<const packet_conn_cancel*>(p.payload);
+        if (conn_cancel->client_nonce != client_nonce)
+            return false;
+        
+        emit_connection_canceled();
+
+        main_stage = server_main_stage::empty;
+
+        return true;
+    }*/
+
+	bool server_fsm::on_recv_loading(const packet& p)
+    {
+        return false;
+    }
+
+	bool server_fsm::on_recv_active(const packet& p)
+    {
+        return false;
+    }
+
+	bool server_fsm::on_recv_disconnecting(const packet& p)
+    {
+        return false;
+    }
+
+    bool server_fsm::accept(uint64_t cl_nonce, uint64_t sv_nonce, bool need_filesync)
+    {
+        if (main_stage != server_main_stage::empty)
+            return false;
+
+        client_nonce = cl_nonce;
+        server_nonce = sv_nonce;
+
         packet_conn_accept conn_accept
         {
             .server_nonce = server_nonce,
@@ -170,73 +163,76 @@ namespace tungsten::protocol
         emit_send(
             make_packet(
                 curr_timestamp_us, 
-                packet_type::conn_accept, 
+                packet_type::conn_accept,
                 sizeof(conn_accept), 
                 &conn_accept, 
                 0, 
                 client_nonce
-            ), 
+            ),
             true
         );
 
         reset_timeouts();
-        loading_stage = server_loading_stage::filesync;
-        main_stage    = server_main_stage   ::loading;
+        main_stage = server_main_stage::loading;
 
         return true;
     }
 
-	bool server_fsm::reject(reject_reason reason)
+	bool server_fsm::reject(packet& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason)
     {
-        if (main_stage != server_main_stage::waiting_conn_result)
-            return false;
 
         packet_conn_reject conn_reject;
         conn_reject.reason = reason;
 
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::conn_reject, 
-                sizeof(conn_reject), 
-                &conn_reject, 
-                0, 
-                client_nonce
-            ), 
-            true
+        out = make_packet(
+            timestamp_us, 
+            packet_type::conn_reject, 
+            sizeof(conn_reject), 
+            &conn_reject, 
+            0, 
+            cl_nonce
         );
-
-        reset_timeouts();
-        main_stage = server_main_stage::empty;
 
         return true;
     }
 
+    
+	bool server_fsm::is_conn_req(const packet& p)
+    {
+        return validate_magic(p.header) 
+            && validate_packet_sizes(p.header)
+            && validate_checksum(p)
+            && p.header.type == packet_type::conn_req;
+    }
+
 	void server_fsm::on_recv_packet(const packet& p)
     {
-        if (!validate_packet_sizes(p.header))
-            return;
+        bool processed = false;
 
-        using enum server_main_stage;
-        switch (main_stage) 
+        if (validate_packet_sizes(p.header))
         {
-        case empty:
-            on_recv_empty(p);
-            break;
-        case waiting_conn_result:
-            //on_recv_waiting_conn_result(p);
-            break;
-        case loading:
-            on_recv_loading(p);
-            break;
-		case active:
-            on_recv_active(p);
-            break;
-		case disconnecting:
-            on_recv_disconnecting(p);
-            break;
-        default:
-            break;
+            using enum server_main_stage;
+            switch (main_stage) 
+            {
+            case empty:
+                break;
+            case loading:
+                processed = on_recv_loading(p);
+                break;
+            case active:
+                processed = on_recv_active(p);
+                break;
+            case disconnecting:
+                processed = on_recv_disconnecting(p);
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (processed)
+        {
+            reset_timeouts();
         }
     }
 
