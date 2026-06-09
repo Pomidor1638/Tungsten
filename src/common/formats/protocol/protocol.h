@@ -93,7 +93,7 @@ namespace tungsten::protocol
 		uint8_t need_filesync;
 	};
 
-	constexpr size_t MAX_REJECT_REASON_SIZE = MAX_PACKET_PAYLOAD_SIZE - sizeof(fixed_string<0>);
+	constexpr size_t MAX_REJECT_REASON_SIZE = 256;
 
 	using reject_reason = fixed_string<MAX_REJECT_REASON_SIZE>;
 
@@ -447,6 +447,13 @@ namespace tungsten::protocol
 		server_snapshot_sync_stage 	snapshot_sync_stage = server_snapshot_sync_stage::none;
 		
 	};
+
+
+	static_assert(sizeof(packet			   ) <= MAX_PACKET_SIZE		   , "sizeof(packet			   ) > MAX_PACKET_SIZE");
+	static_assert(sizeof(packet_conn_req   ) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_req   ) > MAX_PACKET_PAYLOAD_SIZE");
+	static_assert(sizeof(packet_conn_accept) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_accept) > MAX_PACKET_PAYLOAD_SIZE");
+	static_assert(sizeof(packet_conn_reject) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_reject) > MAX_PACKET_PAYLOAD_SIZE");
+	static_assert(sizeof(packet_conn_cancel) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_cancel) > MAX_PACKET_PAYLOAD_SIZE");
 
 }
 

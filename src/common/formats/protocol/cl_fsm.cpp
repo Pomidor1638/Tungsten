@@ -7,7 +7,9 @@ namespace tungsten::protocol
     
 	bool client_fsm::push_event(const event& e)
     {
-        return events.push(e);
+        bool ok = events.push(e);
+        assert(ok && "protocol event queue overflow");
+        return ok;
     }
 
     void client_fsm::reset_timeouts()
