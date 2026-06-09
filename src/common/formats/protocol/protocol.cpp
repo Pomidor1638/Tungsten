@@ -86,10 +86,6 @@ namespace tungsten::protocol
         if (!data || size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
             return false;
 
-
-        if (!validate_packet_sizes(out.header))
-            return false;
-
         size_t expected_size = out.header.header_size + out.header.payload_size;
 
         if (expected_size != size)
@@ -97,6 +93,9 @@ namespace tungsten::protocol
         
         // memset(&out, 0, sizeof(out));
         memcpy(&out, data, size);
+
+        if (!validate_packet_sizes(out.header))
+            return false;
 
         return true;
     }

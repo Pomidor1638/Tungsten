@@ -63,7 +63,7 @@ namespace tungsten::protocol
 		uint8_t 		payload[MAX_PACKET_PAYLOAD_SIZE];
 	};
 
-	bool parse_packet(packet& out, int size, void* data);
+	bool parse_packet(packet& out, size_t size, const void* data);
 
 	// Fixed string with explicit size. It does not require null termination.
 	template <int N>
