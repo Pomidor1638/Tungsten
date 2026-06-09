@@ -4,6 +4,12 @@
 namespace tungsten::protocol 
 {
 
+    
+	bool client_fsm::push_event(const event& e)
+    {
+        return events.push(e);
+    }
+
     void client_fsm::reset_timeouts()
     {
         last_recv_timestamp_us = curr_timestamp_us;
@@ -32,7 +38,7 @@ namespace tungsten::protocol
         
         uint64_t delta = curr_timestamp_us - last_recv_timestamp_us;
         
-        if (delta > retry_time)
+        if (delta > retry_interval_us)
         {
             if (tries_count)
             {
@@ -75,7 +81,7 @@ namespace tungsten::protocol
     
 	void client_fsm::emit_connection_accepted(bool need_filesync)
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::connection_accepted,
                 .conn_accepted = {
@@ -87,7 +93,7 @@ namespace tungsten::protocol
 
 	void client_fsm::emit_connection_rejected(reject_reason reason)
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::connection_rejected,
                 .conn_rejected = {.reason = reason }
@@ -97,7 +103,7 @@ namespace tungsten::protocol
     
 	void client_fsm::emit_error(event_error_type type)
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::error,
                 .error = {.type = type}
@@ -107,7 +113,7 @@ namespace tungsten::protocol
     
 	void client_fsm::emit_send(const packet& p, bool reliable)
     {
-        events.push(event{
+        push_event(event{
             .type = event_type::send,
             .send = {
                 .reliable = reliable,
@@ -162,14 +168,17 @@ namespace tungsten::protocol
     
 	bool client_fsm::on_loading_filesync(const packet& p)
     {
+        return false;
     }
 
 	bool client_fsm::on_loading_level_info(const packet& p)
     {
+        return false;
     }
 
 	bool client_fsm::on_loading_snapshot_sync(const packet& p)
     {
+        return false;
     }
 
 

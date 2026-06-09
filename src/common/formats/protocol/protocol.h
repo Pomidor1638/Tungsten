@@ -20,11 +20,9 @@ namespace tungsten::protocol
 
 	enum class packet_flags : uint8_t
 	{
-		none = 0,
-
-		encrypted,
-		compressed,
-		reliable,
+		none 		= 	   0,
+		encrypted 	= 1 << 0,
+		compressed 	= 1 << 1,
 	};
 
 	enum class packet_type : uint8_t
@@ -65,6 +63,8 @@ namespace tungsten::protocol
 		uint8_t 		payload[MAX_PACKET_PAYLOAD_SIZE];
 	};
 
+	bool parse_packet(packet& out, int size, void* data);
+
 	// Fixed string with explicit size. It does not require null termination.
 	template <int N>
 	struct fixed_string
@@ -93,7 +93,7 @@ namespace tungsten::protocol
 		uint8_t need_filesync;
 	};
 
-	constexpr size_t MAX_REJECT_REASON_SIZE = MAX_PACKET_PAYLOAD_SIZE;
+	constexpr size_t MAX_REJECT_REASON_SIZE = MAX_PACKET_PAYLOAD_SIZE - sizeof(fixed_string<0>);
 
 	using reject_reason = fixed_string<MAX_REJECT_REASON_SIZE>;
 
@@ -292,7 +292,7 @@ namespace tungsten::protocol
 
 		// timeouts
 		uint64_t last_recv_timestamp_us = 0;
-		uint64_t retry_time = 5;
+		uint64_t retry_interval_us  	= 5;
 		int retry_count = 5;
 		int tries_count = 0;
 
@@ -306,6 +306,7 @@ namespace tungsten::protocol
 		// filesync
 		client_loading_stage loading_stage = client_loading_stage::none;
 
+		bool push_event(const event& e);
 
 		void emit_send(const packet& p, bool reliable);
 		void emit_error(event_error_type type);
@@ -407,6 +408,8 @@ namespace tungsten::protocol
 
 	private:
 
+		bool push_event(const event& e);
+
 		void emit_send(const packet& p, bool reliable);
 		void emit_error(event_error_type type);
 
@@ -421,7 +424,7 @@ namespace tungsten::protocol
 
 		// timeouts
 		uint64_t last_recv_timestamp_us = 0;
-		uint64_t retry_time = 5;
+		uint64_t retry_interval_us  = 5;
 		int retry_count = 5;
 		int tries_count = 0;
 

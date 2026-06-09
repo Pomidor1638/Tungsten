@@ -4,6 +4,11 @@
 namespace tungsten::protocol 
 {
 
+    bool server_fsm::push_event(const event& e)
+    {
+        return events.push(e);
+    }
+
     void server_fsm::tick(uint64_t delta_time_us)
     {
         last_timestamp_us = curr_timestamp_us;
@@ -28,7 +33,7 @@ namespace tungsten::protocol
         
         uint64_t delta = curr_timestamp_us - last_recv_timestamp_us;
         
-        if (delta > retry_time)
+        if (delta > retry_interval_us)
         {
             if (tries_count)
             {
@@ -69,7 +74,7 @@ namespace tungsten::protocol
     
 	void server_fsm::emit_send(const packet& p, bool reliable)
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::send,
                 .send = {
@@ -82,7 +87,7 @@ namespace tungsten::protocol
 
 	void server_fsm::emit_error(event_error_type type)
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::error,
                 .error = {
@@ -94,7 +99,7 @@ namespace tungsten::protocol
 
     void server_fsm::emit_connection_canceled()
     {
-        events.push(
+        push_event(
             event{
                 .type = event_type::connection_canceled,
             }
