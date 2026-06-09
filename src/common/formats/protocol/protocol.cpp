@@ -83,7 +83,7 @@ namespace tungsten::protocol
     
 	bool parse_packet(packet& out, int size, void* data)
     {
-        if (size < PACKET_HEADER_SIZE && size > MAX_PACKET_SIZE)
+        if (size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
         {
             return false;
         }
