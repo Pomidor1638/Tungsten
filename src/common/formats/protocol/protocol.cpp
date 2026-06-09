@@ -81,13 +81,21 @@ namespace tungsten::protocol
     }
 
     
-	bool parse_packet(packet& out, int size, void* data)
+	bool parse_packet(packet& out, size_t size, const void* data)
     {
-        if (size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
-        {
+        if (!data || size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
             return false;
-        }
 
+
+        if (!validate_packet_sizes(out.header))
+            return false;
+
+        size_t expected_size = out.header.header_size + out.header.payload_size;
+
+        if (expected_size != size)
+            return false;
+        
+        // memset(&out, 0, sizeof(out));
         memcpy(&out, data, size);
 
         return true;
