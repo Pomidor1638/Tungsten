@@ -5,7 +5,7 @@ namespace tungsten::util::container
 {
 
     template<typename T>
-    class static_span
+    class static_span final
     {
     public:
         static_span() = default;

@@ -10,7 +10,7 @@
 namespace tungsten::util::container
 {
     template<class T, size_t pool_capacity>
-    class fixed_pool
+    class fixed_pool final
     {
     public:
 
@@ -28,11 +28,17 @@ namespace tungsten::util::container
         using const_pointer     = const value_type*;
 
 
-        class iterator
+        class iterator 
         {
         public:
 
             friend class fixed_pool;
+
+            iterator(const iterator&) = default;
+            iterator(iterator&&) = default;
+            ~iterator() = default;
+
+
 
             reference operator*()
             {
@@ -73,6 +79,7 @@ namespace tungsten::util::container
             }
             */
         private:
+
             iterator(fixed_pool<value_type, pool_capacity>* p, index_type i)
                 : pool(p)
                 , idx(i)
@@ -83,11 +90,20 @@ namespace tungsten::util::container
             index_type idx = nosize;
         };
 
-        iterator begin()
+        iterator&& begin()
         {
             return iterator{this, find_next_alive<true>(0)};
         }
-        iterator end()
+        iterator&& end()
+        {
+            return iterator{this, nosize};
+        }
+
+        const iterator& cbegin() const
+        {
+            return iterator{this, find_next_alive<true>(0)};
+        }
+        const iterator& cend() const
         {
             return iterator{this, nosize};
         }

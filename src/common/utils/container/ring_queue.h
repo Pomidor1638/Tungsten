@@ -8,7 +8,7 @@
 namespace tungsten::util::container
 {
     template <typename T, std::size_t MaxSize>
-    class ring_queue
+    class ring_queue final
     {
     public:
         static_assert(MaxSize > 0, "ring_queue capacity must be greater than zero");
