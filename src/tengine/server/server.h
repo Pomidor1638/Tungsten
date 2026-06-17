@@ -52,26 +52,10 @@ namespace tungsten::server
         // Network      //
         //--------------//
 
-        protocol::packet_builder    packet_builder  = {};
         net::net_message            net_msg         = {};
         net::server_net*            network         = nullptr;
         
         void process_net();
-        void process_net_incoming();
-        void process_net_incoming_conn_req();
-        void process_net_incoming_conn_cancel();
-        void process_net_incoming_conn_ready();
-        void process_net_incoming_conn_req_files();
-        void process_net_incoming_conn_ack_file();
-        void process_net_incoming_cl_snapshot();
-        void process_net_incoming_cl_event();
-        void process_net_incoming_cl_req();
-        void process_net_incoming_sv_ack();
-        void process_net_incoming_disconnect_req();
-        void process_net_incoming_disconnect_ack();
-        void process_net_incoming_status_req();
-        
-        void process_net_outgoing();
 
         //----------//
         // Timing   //
@@ -114,12 +98,12 @@ namespace tungsten::server
 
         struct sv_player_connection_state
         {
-            protocol::server_client_stage stage = protocol::server_client_stage::disconnected;
+            protocol::server_client_fsm fsm{};
         };
 
         struct sv_player_input_state
         {
-            protocol::cl_usercmd cmd{};    
+            protocol::usercmd cmd{};    
             protocol::console_command console_cmd{};
         };
 

@@ -2,24 +2,26 @@
 // Created by UBER_USER on 22.12.2025.
 //
 
+/*
+
+	common format for .tbsp files in TUNGSTEN
+
+*/
+
 #pragma once
 
+#include <cstdint>
 #define TUNGSTEN_ENGINE
 
-#include <cstdint>
-#include <vector>
-#include <array>
-#include <bitset>
-#include <string>
+// is this need?
 
-typedef unsigned char byte;
+// I don't like using byte, it looks crude 
 
 #define PLANENUM_LEAF               -1
 #define MAX_MAP_HULLS                4
 #define MAX_MAP_MODELS             256
 #define MAX_MAP_ENTITIES          1024
 #define MAX_MAP_ENTSTRING        65536
-
 #define MAX_MAP_PLANES            8192
 #define MAX_MAP_NODES            32767
 #define MAX_MAP_CLIPNODES        32767
@@ -30,16 +32,20 @@ typedef unsigned char byte;
 #define MAX_MAP_PORTALS          65535
 #define MAX_MAP_PORTALINDEXES   256000
 #define MAX_MAP_TEXINFO           4096
-#define MAX_TEXTURE_NAME	       128
+#define MAX_MAP_TEXTURE_NAME	   128
 #define	MAX_MAP_MIPTEX		  0xF00000
 #define	MAX_MAP_LIGHTING	  0x800000
 #define	MAX_MAP_VISIBILITY	  0x800000
+#define	MAX_MAP_HEARING	  	  0x800000
 
-#define BSPVERSION            144
+// need to fix
+#define BSPVERSION            	   144
+
+// TODO:
+// constexpr size_t MAX_MAP_SIZE = 
 
 enum LUMP_THINGS
 {
-
 	LUMP_PLANES = 0,
 	LUMP_VERTEXES,
 	LUMP_VINDEXES,
@@ -79,16 +85,15 @@ typedef struct
 
 typedef struct
 {
-	dvec3_t mins;
-	dvec3_t maxs;
-	dvec3_t origin;
+	dvec3_t 	 mins;
+	dvec3_t 	 maxs;
+	dvec3_t 	 origin;
 
 	dnode_index	 headnode[MAX_MAP_HULLS];
 	uint16_t     visleafs;
 
-	dface_index	firstface;
-	uint16_t    numfaces;
-
+	dface_index	 firstface;
+	uint16_t     numfaces;
 } dmodel_t;
 
 typedef struct
@@ -122,14 +127,13 @@ typedef struct
 
 typedef struct
 {
-	dplane_index planenum;
-	byte side;
+	dplane_index 	planenum;
+	uint8_t			side;
 
-	dtexinfo_index texinfonum;
+	dtexinfo_index 	texinfonum;
 
-	dvec3_index firstpoint;
-	uint16_t    numpoints;
-
+	dvec3_index 	firstpoint;
+	uint16_t    	numpoints;
 } dface_t;
 
 typedef struct
@@ -137,9 +141,8 @@ typedef struct
 	dplane_index planenum;
 	dnode_index  leafs[2];
 
-	dvec3_index firstpoint;
-	uint16_t numpoints;
-
+	dvec3_index	 firstpoint;
+	uint16_t 	 numpoints;
 } dportal_t;
 
 typedef struct
@@ -159,20 +162,20 @@ typedef struct
 
 typedef struct
 {
-	int8_t contents;
+	int8_t 		  contents;
 
-	dvec3_t mins;
-	dvec3_t maxs;
+	dvec3_t 	  mins;
+	dvec3_t 	  maxs;
 
-	dface_index firstface;
-	uint16_t    numfaces;
+	dface_index   firstface;
+	uint16_t      numfaces;
 
 	dportal_index firstportal;
 	uint16_t      numportals;
-
 } dleaf_t;
 
-typedef struct {
+typedef struct 
+{
 	float    vecs[2][4];
 	uint32_t texnum;
 	uint32_t flags;
@@ -188,37 +191,48 @@ typedef struct
 
 typedef struct dtexture_s
 {
-	char		name[MAX_TEXTURE_NAME];
-	uint32_t	width, height;
-	byte		colortype;
-	byte        data[];
+	char	 name[MAX_MAP_TEXTURE_NAME];
+	uint32_t width, height;
+	uint8_t	 colortype;
+	uint8_t  data[];
 } dtexture_t;
 
-// lighting
+// lighting block
 typedef struct dlightlump_s
 {
-	uint32_t  numlight_masks;
-	uint32_t  dataofs[];
+	uint32_t numlight_masks;
+	uint32_t dataofs[];
 } dlightlump_t;
-
 
 #pragma pack(pop) 
 
 
 #ifdef TUNGSTEN_ENGINE
+// depricated, need to replace
+
+// never use heap allocation in tungsten
+// use only linear allocators from tungsten::memory
+
+#include <string>
+#include <vector>
+#include <bitset>
+
+
 struct BSPTexture
 {
 	std::string name;
-	int width, height;
-	byte color_type;
-	std::vector<byte> data{};
+	int 		width, height;
+	uint8_t 	color_type;
+
+	std::vector<uint8_t> data{};
 };
 
 struct BSPLightMask
 {
-	int width, height;
-	byte light_type;
-	std::vector<byte> data;
+	int 	width, height;
+	uint8_t light_type;
+
+	std::vector<uint8_t> data;
 };
 
 struct BSPVisibility // PVS
@@ -227,11 +241,12 @@ struct BSPVisibility // PVS
 	std::vector<bool> PVS;
 };
 
-struct BSPHearing // PHS
-{
-	int size;
-	std::vector<bool> PHS;
-};
+// TODO:
+// struct BSPHearing // PHS
+// {
+// 	int size;
+// 	std::bitset<MAX_MAP_HEARING_SIZE> PHS;
+// };
 
 
 
@@ -257,14 +272,14 @@ struct BSPMap
 	BSPMap() = default;
 	virtual ~BSPMap() = default;
 
-	bool parse(const std::vector<byte>& mem_block);
+	bool parse(const std::vector<uint8_t>& mem_block);
 	void clear();
 
 private:
-	bool parse_textures(const std::vector<byte>& mem_block);
-	bool parse_visibility(const std::vector<byte>& mem_block);
-	bool parse_lighting(const std::vector<byte>& mem_block);
-	bool parse_hearing(const std::vector<byte>& mem_block);
+	bool parse_textures(const std::vector<uint8_t>& mem_block);
+	bool parse_visibility(const std::vector<uint8_t>& mem_block);
+	bool parse_lighting(const std::vector<uint8_t>& mem_block);
+	bool parse_hearing(const std::vector<uint8_t>& mem_block);
 };
 
 #endif

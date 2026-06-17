@@ -63,7 +63,6 @@ namespace tungsten::client
         ClientState client_state{};
 
         // Connection
-        protocol::packet_builder      packet_builder{};
         net     ::net_message         net_msg;
         net     ::internal_connection internal_connection{};
         net     ::internal_client_net internal_client_net { internal_connection };

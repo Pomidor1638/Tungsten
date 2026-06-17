@@ -7,7 +7,7 @@
 // All protocol structures are packed to 1 byte.
 // This prevents compiler padding from changing packet sizes.
 
-// This file describes packet structures only.
+// This file describes packet structures only and protocol fsm.
 // Transport, reliability, channels and resending are handled elsewhere.
 
 namespace tungsten::protocol
@@ -33,6 +33,20 @@ namespace tungsten::protocol
 		conn_cancel,
 		conn_accept,
 		conn_reject,
+
+		cl_status_req,
+		sv_status_ack,
+
+		sv_gamestate,
+		sv_snapshot,
+		
+		cl_ready,
+		cl_usercmd,
+
+		disconnect_req,
+		disconnect_ack,
+
+		transfer,
 	};
 
 	struct packet_header
@@ -41,7 +55,7 @@ namespace tungsten::protocol
 		
 		char		magic[MAGIC_SIZE];
 		uint16_t	protocol_version;
-		uint64_t	nonce;
+		uint64_t	receiver_nonce;
 
 		uint16_t	header_size;
 		uint16_t	payload_size;
@@ -54,7 +68,7 @@ namespace tungsten::protocol
 
 
 	constexpr size_t PACKET_HEADER_SIZE 		= sizeof(packet_header);	
-	constexpr size_t MAX_PACKET_SIZE 			= 1400;
+	constexpr size_t MAX_PACKET_SIZE 			= 1200;
     constexpr size_t MAX_PACKET_PAYLOAD_SIZE 	= MAX_PACKET_SIZE - PACKET_HEADER_SIZE;
 
 	struct packet
@@ -102,6 +116,30 @@ namespace tungsten::protocol
 		reject_reason reason;
 	};
 
+
+	struct packet_sv_file_manifest
+	{};
+
+
+	constexpr size_t MAX_CLASSNAME_SIZE = 64;
+	using sv_classname = fixed_string<MAX_CLASSNAME_SIZE>;
+
+	constexpr size_t MAX_CLASSES_COUNT = 16;
+
+	struct packet_sv_gamestate
+	{
+		uint64_t server_tick;
+		uint16_t class_count;
+		sv_classname classnames[MAX_CLASSES_COUNT];
+	};
+
+	struct packet_sv_snapshot_header
+	{
+		uint32_t server_tick;
+		int32_t delta_from;
+		uint16_t entity_count;
+	};
+
 	
 #pragma pack(pop)
 
@@ -118,7 +156,7 @@ namespace tungsten::protocol
 	// client events
 		connection_accepted,
 		connection_rejected,
-		
+
 	};
 
 	struct event_send
@@ -214,8 +252,6 @@ namespace tungsten::protocol
 
 	*/
 
-	
-
 	/*
 		Client filesync stage sequence
 	*/
@@ -225,7 +261,7 @@ namespace tungsten::protocol
 		none = 0,
 
 		filesync,
-		levelsync,
+		gamesync,
 		snapshot_sync
 	};
 
@@ -243,7 +279,7 @@ namespace tungsten::protocol
         uint64_t timestamp_us,
         packet_type type,
         int payload_size,
-        void* payload,
+        const void* payload,
         uint8_t flags,
         uint64_t nonce
     );
@@ -350,8 +386,9 @@ namespace tungsten::protocol
 		none = 0,
 
 		filesync,
-		levelsync,
-		snapshot_sync
+		gamesync,
+		snapshot_sync,
+		ready_sync,
 	};
 
 	/*
@@ -361,15 +398,30 @@ namespace tungsten::protocol
 	enum class server_filesync_stage
 	{
 		none = 0,
+		pending_file_manifest,
+		waiting_needed_file_manifest,
+		checking_missing_files,
+		pending_file,
+		sending_file,
+	};
+
+	enum class server_file_stage
+	{
+		none = 0,
+
+		checking_file_fragments,
+
 	};
 
 	/*
-		Server levelsync stage sequence
+		Server gamesync stage sequence
 	*/
 
-	enum class server_levelsync_stage
+	enum class server_gamesync_stage
 	{
 		none = 0,
+		pending_gamestate, // only diffs from .tbsp
+		waiting_ack,
 	};
 
 	/*
@@ -382,16 +434,16 @@ namespace tungsten::protocol
 	};
 	
 
-	class server_fsm
+	class server_client_fsm
 	{
 	public:
-		server_fsm()  = default;
-		~server_fsm() = default;
+		server_client_fsm()  = default;
+		~server_client_fsm() = default;
 
-		server_fsm(const server_fsm& ) = delete;
-		server_fsm(      server_fsm&&) = delete;
-		void operator=(const server_fsm& ) = delete;
-		void operator=(      server_fsm&&) = delete;
+		server_client_fsm(const server_client_fsm& ) = delete;
+		server_client_fsm(      server_client_fsm&&) = delete;
+		void operator=(const server_client_fsm& ) = delete;
+		void operator=(      server_client_fsm&&) = delete;
 
 		void tick(uint64_t delta_time_us);
 		void reset();
@@ -400,6 +452,8 @@ namespace tungsten::protocol
 		void on_recv_packet(const packet& p);
 
 		bool accept(uint64_t cl_nonce, uint64_t sv_nonce, bool need_filesync);
+		
+		bool load_gamestate(const packet_sv_gamestate& gs);
 
 		static bool is_conn_req(const packet& p);
 		static bool reject(packet& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason);
@@ -437,13 +491,18 @@ namespace tungsten::protocol
 
 		//bool on_recv_empty(const packet& p);
 		bool on_recv_loading(const packet& p);
+
+		bool on_recv_loading_filesync(const packet& p);
+		bool on_recv_loading_gamesync(const packet& p); // waiting_ack
+		bool on_recv_loading_snapshot_sync(const packet& p);
+		
 		bool on_recv_active(const packet& p);
 		bool on_recv_disconnecting(const packet& p);
 
 		server_main_stage 			main_stage			= server_main_stage			::none;
 		server_loading_stage 		loading_stage		= server_loading_stage		::none;
 		server_filesync_stage 		filesync_stage		= server_filesync_stage		::none;
-		server_levelsync_stage 		levelsync_stage		= server_levelsync_stage	::none;
+		server_gamesync_stage 		gamesync_stage		= server_gamesync_stage	::none;
 		server_snapshot_sync_stage 	snapshot_sync_stage = server_snapshot_sync_stage::none;
 		
 	};

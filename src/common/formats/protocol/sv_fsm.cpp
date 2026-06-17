@@ -1,17 +1,18 @@
 
 #include "protocol.h"
+#include "protocol/protocol.h"
 
 namespace tungsten::protocol 
 {
 
-    bool server_fsm::push_event(const event& e)
+    bool server_client_fsm::push_event(const event& e)
     {
         bool ok = events.push(e);
         assert(ok && "protocol event queue overflow");
         return ok;
     }
 
-    void server_fsm::tick(uint64_t delta_time_us)
+    void server_client_fsm::tick(uint64_t delta_time_us)
     {
         last_timestamp_us = curr_timestamp_us;
         curr_timestamp_us += delta_time_us;
@@ -28,7 +29,7 @@ namespace tungsten::protocol
     }
 
     
-	void server_fsm::check_timeouts()
+	void server_client_fsm::check_timeouts()
     {
         if (main_stage == server_main_stage::empty)
             return;
@@ -50,13 +51,13 @@ namespace tungsten::protocol
     }
    
 
-	void server_fsm::reset_timeouts()
+	void server_client_fsm::reset_timeouts()
     {
         last_recv_timestamp_us = curr_timestamp_us;
 		tries_count = retry_count;
     }
 
-	void server_fsm::reset()
+	void server_client_fsm::reset()
     {
         last_timestamp_us = 0;
         curr_timestamp_us = 0;
@@ -68,13 +69,13 @@ namespace tungsten::protocol
         main_stage = server_main_stage::empty;
     }
 
-	bool server_fsm::poll_event(event& e)
+	bool server_client_fsm::poll_event(event& e)
     {
         return events.pop(e);
     }
 
     
-	void server_fsm::emit_send(const packet& p, bool reliable)
+	void server_client_fsm::emit_send(const packet& p, bool reliable)
     {
         push_event(
             event{
@@ -87,7 +88,7 @@ namespace tungsten::protocol
         );
     }
 
-	void server_fsm::emit_error(event_error_type type)
+	void server_client_fsm::emit_error(event_error_type type)
     {
         push_event(
             event{
@@ -99,7 +100,7 @@ namespace tungsten::protocol
         );
     }
 
-    void server_fsm::emit_connection_canceled()
+    void server_client_fsm::emit_connection_canceled()
     {
         push_event(
             event{
@@ -138,22 +139,75 @@ namespace tungsten::protocol
         return true;
     }*/
 
-	bool server_fsm::on_recv_loading(const packet& p)
+    
+	bool server_client_fsm::on_recv_loading_filesync(const packet& p)
     {
         return false;
     }
 
-	bool server_fsm::on_recv_active(const packet& p)
+	bool server_client_fsm::on_recv_loading_gamesync(const packet& p)
+    {
+
+        
+
+        return false;
+    }
+
+	bool server_client_fsm::on_recv_loading_snapshot_sync(const packet& p)
     {
         return false;
     }
 
-	bool server_fsm::on_recv_disconnecting(const packet& p)
+	bool server_client_fsm::on_recv_loading(const packet& p)
+    {
+        using enum server_loading_stage;
+        switch (loading_stage) 
+        {
+		case filesync:
+            return on_recv_loading_filesync(p);
+		case gamesync:
+            return on_recv_loading_gamesync(p); 
+		case snapshot_sync:
+            return on_recv_loading_snapshot_sync(p);
+        default:
+            break;
+        }
+        return false;
+    }
+
+	bool server_client_fsm::on_recv_active(const packet& p)
     {
         return false;
     }
 
-    bool server_fsm::accept(uint64_t cl_nonce, uint64_t sv_nonce, bool need_filesync)
+	bool server_client_fsm::on_recv_disconnecting(const packet& p)
+    {
+        return false;
+    }
+
+    
+	bool server_client_fsm::load_gamestate(const packet_sv_gamestate& gs)
+    {
+        if (gs.class_count > MAX_CLASSES_COUNT)
+            return false;
+        
+        emit_send(
+            make_packet(
+                curr_timestamp_us, 
+                packet_type::sv_gamestate, 
+                sizeof(gs), 
+                &gs, 
+                0,
+                client_nonce
+            ),
+            true
+        );
+
+        gamesync_stage = server_gamesync_stage::waiting_ack;
+        return true;
+    }
+
+    bool server_client_fsm::accept(uint64_t cl_nonce, uint64_t sv_nonce, bool need_filesync)
     {
         if (main_stage != server_main_stage::empty)
             return false;
@@ -180,12 +234,16 @@ namespace tungsten::protocol
         );
 
         reset_timeouts();
-        main_stage = server_main_stage::loading;
+
+        main_stage    = server_main_stage   ::loading;
+
+        // for test
+        loading_stage = server_loading_stage::gamesync; // filesync
 
         return true;
     }
 
-	bool server_fsm::reject(packet& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason)
+	bool server_client_fsm::reject(packet& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason)
     {
 
         packet_conn_reject conn_reject;
@@ -204,7 +262,7 @@ namespace tungsten::protocol
     }
 
     
-	bool server_fsm::is_conn_req(const packet& p)
+	bool server_client_fsm::is_conn_req(const packet& p)
     {
         return validate_magic(p.header) 
             && validate_packet_sizes(p.header)
@@ -212,7 +270,7 @@ namespace tungsten::protocol
             && p.header.type == packet_type::conn_req;
     }
 
-	void server_fsm::on_recv_packet(const packet& p)
+	void server_client_fsm::on_recv_packet(const packet& p)
     {
         bool processed = false;
 
@@ -243,7 +301,7 @@ namespace tungsten::protocol
         }
     }
 
-	void server_fsm::disconnect()
+	void server_client_fsm::disconnect()
     {
     }
 }

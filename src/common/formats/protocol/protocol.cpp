@@ -6,35 +6,42 @@
 
 namespace tungsten::protocol
 {
-    packet make_packet
-    (
+    bool make_packet(
+        packet& out,
         uint64_t timestamp_us,
         packet_type type,
         int payload_size,
-        void* payload,
+        const void* payload,
         uint8_t flags,
-        uint64_t nonce
+        uint64_t receiver_nonce
     ) {
-        packet p;
-        packet_header& header = p.header;
+        if (payload_size < 0 || payload_size > MAX_PACKET_PAYLOAD_SIZE)
+            return false;
+
+        if (payload_size > 0 && !payload)
+            return false;
+
+        memset(&out, 0, sizeof(out));
+
+        packet_header& header = out.header;
 
         header.timestamp_us = timestamp_us;
         header.type = type;
         header.flags = flags;
         header.protocol_version = VERSION;
         header.header_size = PACKET_HEADER_SIZE;
-        header.nonce = nonce;
+        header.receiver_nonce = receiver_nonce;
+        header.payload_size = static_cast<uint16_t>(payload_size);
         header.checksum = 0;
 
         memcpy(header.magic, MAGIC, MAGIC_SIZE);
-        header.payload_size = std::clamp<uint16_t>(payload_size, 0, MAX_PACKET_PAYLOAD_SIZE);
-        
-        if (payload)
-            memcpy(p.payload, payload,  header.payload_size);
 
-        memset(p.payload, 0, MAX_PACKET_PAYLOAD_SIZE - header.payload_size);
-        
-        return p;
+        if (payload_size)
+            memcpy(out.payload, payload, payload_size);
+
+        make_checksum(out);
+
+        return true;
     }
 
     
@@ -55,7 +62,7 @@ namespace tungsten::protocol
 
 	bool validate_nonce(const packet_header& header, uint64_t nonce)
     {
-        return header.nonce == nonce;
+        return header.receiver_nonce == nonce;
     }
 
     /*
@@ -86,16 +93,33 @@ namespace tungsten::protocol
         if (!data || size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
             return false;
 
-        size_t expected_size = out.header.header_size + out.header.payload_size;
+        const auto* bytes = static_cast<const uint8_t*>(data);
+
+        packet_header header{};
+        memcpy(&header, bytes, PACKET_HEADER_SIZE);
+
+        if (!validate_packet_sizes(header))
+            return false;
+
+        const size_t expected_size =
+            static_cast<size_t>(header.header_size) +
+            static_cast<size_t>(header.payload_size);
 
         if (expected_size != size)
             return false;
-        
-        // memset(&out, 0, sizeof(out));
-        memcpy(&out, data, size);
 
-        if (!validate_packet_sizes(out.header))
-            return false;
+        memset(&out, 0, sizeof(out));
+
+        out.header = header;
+
+        if (header.payload_size)
+        {
+            memcpy(
+                out.payload,
+                bytes + header.header_size,
+                header.payload_size
+            );
+        }
 
         return true;
     }

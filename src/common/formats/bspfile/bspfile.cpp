@@ -15,7 +15,7 @@
 
 
 
-bool BSPMap::parse_textures(const std::vector<byte>& mem_block)
+bool BSPMap::parse_textures(const std::vector<uint8_t>& mem_block)
 {
     const dheader_t* header = reinterpret_cast<const dheader_t*>(mem_block.data());
     lump_t lump = header->lumps[LUMP_TEXTURES];
@@ -33,7 +33,7 @@ bool BSPMap::parse_textures(const std::vector<byte>& mem_block)
     }
 
 
-    auto texblock = reinterpret_cast<const byte*>(mem_block.data() + lump.fileofs);
+    auto texblock = reinterpret_cast<const uint8_t*>(mem_block.data() + lump.fileofs);
     auto texlump = reinterpret_cast<const dtexturelump_t*>(texblock);
 
     const size_t texheader_size = sizeof(dtexturelump_t) + texlump->numtex * sizeof(texlump->dataofs[0]);
@@ -66,7 +66,7 @@ bool BSPMap::parse_textures(const std::vector<byte>& mem_block)
         texture.width = dtexture->width;
 
         // to avoid overflow
-        texture.name.assign(dtexture->name, strnlen_s(dtexture->name, MAX_TEXTURE_NAME));
+        texture.name.assign(dtexture->name, strnlen_s(dtexture->name, MAX_MAP_TEXTURE_NAME));
 
 
         texture.data.resize(data_size);
@@ -76,20 +76,20 @@ bool BSPMap::parse_textures(const std::vector<byte>& mem_block)
     return true;
 }
 
-bool BSPMap::parse_visibility(const std::vector<byte>& mem_block)
+bool BSPMap::parse_visibility(const std::vector<uint8_t>& mem_block)
 {
     return true;
 }
-bool BSPMap::parse_lighting(const std::vector<byte>& mem_block)
+bool BSPMap::parse_lighting(const std::vector<uint8_t>& mem_block)
 {
     return true;
 }
-bool BSPMap::parse_hearing(const std::vector<byte>& mem_block)
+bool BSPMap::parse_hearing(const std::vector<uint8_t>& mem_block)
 {
     return true;
 }
 
-bool BSPMap::parse(const std::vector<byte>& mem_block)
+bool BSPMap::parse(const std::vector<uint8_t>& mem_block)
 {
     if (mem_block.size() < sizeof(dheader_t))
         return false;
@@ -146,20 +146,20 @@ bool BSPMap::parse(const std::vector<byte>& mem_block)
 
 void BSPMap::clear()
 {
-    vertexes.clear();
-    vertex_indexes.clear();
-    planes.clear();
-    faces.clear();
-    portals.clear();
-    portal_indexes.clear();
-    nodes.clear();
-    clipnodes.clear();
-    leafs.clear();
-    models.clear();
-    texture_infos.clear();
-    textures.clear();
-    lighting.clear();
-    visibility.clear();
+    vertexes.       clear();
+    vertex_indexes. clear();
+    planes.         clear();
+    faces.          clear();
+    portals.        clear();
+    portal_indexes. clear();
+    nodes.          clear();
+    clipnodes.      clear();
+    leafs.          clear();
+    models.         clear();
+    texture_infos.  clear();
+    textures.       clear();
+    lighting.       clear();
+    visibility.     clear();
 }
 
 #endif

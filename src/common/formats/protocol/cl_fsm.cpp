@@ -132,8 +132,10 @@ namespace tungsten::protocol
 
         emit_connection_accepted(conn_accept->need_filesync);
 
-        loading_stage = client_loading_stage::filesync;
         main_stage    = client_main_stage   ::loading;
+        
+        // for test
+        loading_stage = client_loading_stage::gamesync;
         
         return true;
     }
@@ -192,7 +194,7 @@ namespace tungsten::protocol
         case filesync:
             return on_loading_filesync(p);
             break;
-        case levelsync:
+        case gamesync:
             return on_loading_level_info(p);
 		case snapshot_sync:
             return on_loading_snapshot_sync(p);

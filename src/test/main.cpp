@@ -1,122 +1,150 @@
+#include <cstdio>
 #include <cstring>
-#include <iostream>
 
-#include "../common/formats/protocol/protocol.h"
+#include "../common/formats/transfer/transfer.h"
 
-using namespace tungsten;
+namespace tr = tungsten::transfer;
 
-protocol::client_fsm cl_fsm;
-protocol::server_fsm sv_fsm;
 
-uint64_t tick = 0;
+tr::tx_fsm tx{};
+tr::rx_fsm rx{};
 
-void process_cl_events()
+constexpr size_t TEST_SIZE = 32ull * 1024 * 1024 * 1024;
+
+char* tx_data = nullptr;
+char* rx_data = nullptr;
+
+bool running = true;
+
+void process_tx_action()
 {
-    protocol::event e;
-    while (cl_fsm.poll_event(e))
+    tr::tx_action action = tx.pull_action();
+    tr::packet p;
+    
+
+    using enum tr::tx_action_type;
+    switch (action.type) 
     {
-        
-        std::cout << "[client] event: ";
-        switch (e.type) 
-        {
-        case protocol::event_type::send:
-            std::cout << "send";
-            if (protocol::server_fsm::is_conn_req(e.send.p))
-            {
-                /*
-                std::cout << "\n[server] event: connection_requested";
-                sv_fsm.accept(((protocol::packet_conn_req*)e.send.p.payload)->client_nonce, -1, false);
-                */
-                
-                protocol::packet p;
-                protocol::server_fsm::reject(
-                    p, 
-                    tick, 
-                    ((protocol::packet_conn_req*)e.send.p.payload)->client_nonce, 
-                    protocol::reject_reason{
-                        .size = sizeof("test reject"),
-                        .data = "test reject"
-                    }
-                );
-                cl_fsm.on_recv_packet(p);
-            }
-            else
-            {
-                sv_fsm.on_recv_packet(e.send.p);
-            }
-            break;
-        case protocol::event_type::connection_accepted:
-            std::cout << "connection_accepted\n";
-            std::cout << "need_filesync: " << e.conn_accepted.need_filesync;
-            break;
-        case protocol::event_type::connection_rejected:
-            std::cout << "connection_rejected:\nreason: \"";
-            std::cout << std::string(e.conn_rejected.reason.data, e.conn_rejected.reason.size) << '\"';
-            break;
-        case protocol::event_type::error:
-            std::cout << "error";
-            break;
-        default:
-            break;
-        }
-        std::cout << std::endl;
+    case send:
+        //printf("[send]: %i bytes", action.send.size);
+        memcpy(&p, action.send.data, action.send.size);    
+        rx.on_recv(p);
+        break;
+    case need_chunk:
+        //printf("[need_chunk]: offset: %llu, size: %i", action.need_chunk.offset, action.need_chunk.size);
+        tx.chunk(action.need_chunk.offset, action.need_chunk.size, &tx_data[action.need_chunk.offset]);
+        break;
+    case error:
+        printf("[tx]: ");
+        printf("[error]: code: %i", (int)action.error.code);
+        tx.reset();
+        rx.reset();
+        running = false;
+        printf("\n");
+        break;
+    case complete:
+        printf("[tx]: ");
+        printf("[complete]");
+        printf("\n");
+        running = false;
+        break;
+    default:
+        break;
     }
 }
 
-void process_sv_events()
+void process_rx_action()
 {
-    protocol::event e;
-    while (sv_fsm.poll_event(e))
+    tr::rx_action action = rx.pull_action();
+    tr::packet p;
+    
+    using enum tr::rx_action_type;
+    switch (action.type) 
     {
-        
-        std::cout << "[server] event: ";
-        switch (e.type) 
-        {
-        case protocol::event_type::send:
-            std::cout << "send";
-            cl_fsm.on_recv_packet(e.send.p);
-            break;
-        case protocol::event_type::connection_canceled:
-            std::cout << "connection_canceled";
-            break;
-        case protocol::event_type::error:
-            std::cout << "error";
-            break;
-        default:
-            break;
-        }
-        std::cout << std::endl;
+    case send:
+        //printf("[send]: %i bytes", action.send.size);
+        //printf("[rx]: ");
+        memcpy(&p, action.send.data, action.send.size);    
+        tx.on_recv(p);
+        //printf("\n");
+        break;
+	case error:
+        printf("[rx]: ");
+        printf("[error]: code: %i", (int)action.error.code);
+        tx.reset();
+        rx.reset();
+        running = false;
+        printf("\n");
+        break;
+	case offer:
+    {
+        printf("[rx]: ");
+        auto& offer = action.offer;
+        printf("[offer]: size: %llu, chunk_size: %i", offer.total_size, offer.chunk_size);
+        rx.offer_accept();
+        printf("\n");
     }
+        break;
+	case chunk:
+    {
+        //printf("[rx]: ");
+        auto& chunk = action.chunk;
+        //printf("[chunk]: offset: %llu, size: %i", chunk.offset, chunk.size);
+        memcpy(&rx_data[chunk.offset], chunk.data, chunk.size);
+        rx.chunk_commit();
+        //printf("\n");
+    }
+        break;
+	case end:
+        printf("[rx]: ");
+        printf("[end]");
+        rx.end_commit();
+        printf("\n");
+        //running = false;
+        break;
+    default:
+        break;
+    }
+
 }
-
-
 
 int main()
 {
-    cl_fsm.reset();
-    sv_fsm.reset();
 
-    cl_fsm.connect_to(0);
+    tx_data = new char[TEST_SIZE];
+    rx_data = new char[TEST_SIZE];
 
-    tick = 0;
-    int iters = 10;
+    for (size_t i = 0; i < TEST_SIZE; ++i)
+        tx_data[i] = static_cast<char>((i * 13 + 7) & 0xFF);
 
-    for (;iters--;tick++)
+    tx_data[TEST_SIZE-1] = '\0';
+
+    memset(rx_data, 0, TEST_SIZE);
+
+    printf("start testing...\n");
+    tx.reset();
+    rx.reset();
+
+    tx.begin(TEST_SIZE, tr::MAX_CHUNK_SIZE);
+    rx.start();
+
+    uint64_t ticks = 0;
+
+    while (running)
     {
-        std::cout << "[tick: " << tick << ']' << std::endl; 
-
-        if (tick == 0)
-        {
-            //cl_fsm.cancel();
-        }
-
-        cl_fsm.tick(tick);
-        process_cl_events();
-        
-        sv_fsm.tick(tick);
-        process_sv_events();
-
+        process_tx_action();
+        process_rx_action();
+        ticks++;
     }
+
+    printf("transmitted : %s\n", tx_data);
+    printf("received    : %s\n", rx_data);
+    printf("ticks       : %llu\n", ticks);
+    printf("total size  : %llu bytes\n", TEST_SIZE);
+    printf("memcmp: %s\n", memcmp(tx_data, rx_data, TEST_SIZE) ? "not ok" : "ok");
+
+    delete[] tx_data;
+    delete[] rx_data;
 
     return 0;
 }
