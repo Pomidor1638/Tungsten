@@ -36,6 +36,7 @@ namespace tungsten::protocol
 		delta_us		  = 0; 
 
         reset_timeouts();
+        events.clear();
         main_stage = client_main_stage::disconnected;
     }
 

@@ -447,31 +447,28 @@ namespace tungsten::protocol
             &conn_reject
         );
 
-        packet_header_to_protocol(p.header);
 
         out.reliable = true;
         out.size = p.header.header_size + p.header.payload_size;
+        packet_header_to_protocol(p.header);
         memcpy(out.data, &p, out.size);
 
         return true;
     }
 
     
-	bool server_client_fsm::is_conn_req(const byte_span& data, uint64_t& client_nonce)
+	bool server_client_fsm::is_conn_req(const byte_span& data, uint64_t& client_nonce, bool& bad_version)
     {
         packet p;
-        
+        bad_version = false;
+
         if (!parse_packet(p, data.size(), data.data()))
             return false;
-
-        
+                
         packet_header& header = p.header;
 
-        
-        if (header.payload_size != sizeof(packet_conn_req))
-            return false;
-
-        if (   validate_magic(header) 
+        if (header.payload_size == sizeof(packet_conn_req)
+            && validate_magic(header) 
             && validate_checksum
             (
                 header.checksum, 
@@ -482,9 +479,10 @@ namespace tungsten::protocol
         ) {
             auto* conn_req = reinterpret_cast<const packet_conn_req*>(p.payload);
             client_nonce = to_native64(conn_req->client_nonce);
+            bad_version = validate_protocol_version(header);
             return true;
         }
-        
+
         return false;
     }
 

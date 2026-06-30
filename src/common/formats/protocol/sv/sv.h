@@ -125,7 +125,7 @@ namespace tungsten::protocol
 		bool open(uint64_t cl_nonce, uint64_t sv_nonce, bool need_file_sync);
         void close(disconnect_type type, disconnect_reason reason);
 
-		static bool is_conn_req  (const byte_span& data, uint64_t& client_nonce);
+		static bool is_conn_req  (const byte_span& data, uint64_t& client_nonce, bool& bad_version);
 		static bool is_status_req(const byte_span& data);
 
         static bool reject(event_send& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason);
