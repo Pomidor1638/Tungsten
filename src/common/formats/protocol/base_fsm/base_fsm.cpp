@@ -149,7 +149,7 @@ namespace tungsten::protocol
         packet_header header;
         packet_t send_packet;
 
-        protocol_writer writer = { sizeof(send_packet), &send_packet };
+        protocol_writer writer { sizeof(send_packet), &send_packet };
 
         if (!writer.seek(PACKET_HEADER_SIZE))
         {
@@ -293,8 +293,6 @@ namespace tungsten::protocol
         }
     }
 
-
-    
     uint64_t base_fsm::get_timestamp_us() const
     {
         return curr_timestamp_us;

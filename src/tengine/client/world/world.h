@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-#include "bspfile/bspfile.h"
+#include "tbspfile/bspfile.h"
 
 
 namespace tungsten::world

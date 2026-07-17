@@ -3,9 +3,7 @@
 //
 
 /*
-
-	common format for .tbsp files in TUNGSTEN
-
+	common .tbsp format in TUNGSTEN
 */
 
 #pragma once
@@ -14,9 +12,10 @@
 #define TUNGSTEN_ENGINE
 
 // is this need?
+// typedef uint8_t byte
+// I don't like using `byte`, it looks crude 
 
-// I don't like using byte, it looks crude 
-
+// need to replace by constexpr vars, but depricated tbsp (modified qbsp) shares this
 #define PLANENUM_LEAF               -1
 #define MAX_MAP_HULLS                4
 #define MAX_MAP_MODELS             256
@@ -39,10 +38,18 @@
 #define	MAX_MAP_HEARING	  	  0x800000
 
 // need to fix
+
+// i don's actual version, it's like magic - only for integrity check
+
 #define BSPVERSION            	   144
+
+
+
+// Maybe it's property of .tmap format? need to specify.
 
 // TODO:
 // constexpr size_t MAX_MAP_SIZE = 
+
 
 enum LUMP_THINGS
 {
@@ -64,6 +71,9 @@ enum LUMP_THINGS
 
 	HEADER_LUMPS
 };
+
+// this is a bad way to handle serialization. 
+// it is better to use `binary_reader` from `util::binary`.
 
 #pragma pack(push, 1)
 
@@ -208,6 +218,7 @@ typedef struct dlightlump_s
 
 
 #ifdef TUNGSTEN_ENGINE
+
 // depricated, need to replace
 
 // never use heap allocation in tungsten
