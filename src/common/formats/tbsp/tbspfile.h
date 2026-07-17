@@ -39,7 +39,7 @@
 
 // need to fix
 
-// i don's actual version, it's like magic - only for integrity check
+// it's not the actual version, it's like magic - only for integrity check
 
 #define BSPVERSION            	   144
 
