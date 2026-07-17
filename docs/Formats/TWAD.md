@@ -1,7 +1,16 @@
 
 # Format
 
-little-endian
+big-endian
+
+TWAD texture lump layout:
+- twad_texture_lump header
+- texture entries/table
+- sequence records + sequence frame offsets
+- frame records
+- frame raw data
+
+All offsets inside lump are relative to lump start.
 
 ```cpp
 enum twad_lump_type 
@@ -44,3 +53,5 @@ struct twad_material
 ## Programs
 
 ## Models
+
+

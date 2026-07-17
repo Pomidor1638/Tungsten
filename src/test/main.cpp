@@ -20,52 +20,6 @@ struct TestConfig
     size_t iterations;
 } config;
 
-void cl_tick()
-{
-    cl_fsm.tick(delta_time);
-    protocol::event e;
-    while (cl_fsm.poll_event(e))
-    {
-        switch (e.type) 
-        {
-        case protocol::event_type::send:
-            break;
-		case protocol::event_type::error:
-            break;
-        case protocol::event_type::disconnected:
-            break;
-        case protocol::event_type::connection_accepted:
-            break;
-        case protocol::event_type::connection_rejected:
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-void sv_tick()
-{
-    sv_fsm.tick(delta_time);
-    protocol::event e;
-    while (sv_fsm.poll_event(e))
-    {
-        switch (e.type) 
-        {
-        case protocol::event_type::send:
-            break;
-		case protocol::event_type::error:
-            break;
-        case protocol::event_type::disconnected:
-            break;
-        case protocol::event_type::connection_canceled:
-            break;
-        default:
-            break;
-        }
-    }
-}
-
 void test()
 {
     uint64_t start = time(nullptr);
@@ -75,9 +29,6 @@ void test()
     {
         uint64_t cur_time = time(nullptr);
         delta_time = cur_time - last_time;
-
-        cl_tick();
-        sv_tick();
     }
 
     uint64_t end = time(nullptr);

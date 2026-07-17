@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <vector>
 
-typedef uint8_t byte;
-
 bool ShowCheckboxInfo
 (
     const std::string& title,
@@ -42,10 +40,14 @@ bool ShowCheckboxQuestion
     bool defaultChecked = false
 );
 
+// bool system_question();
+// bool system_error();
+// bool sys_warning();
+// bool sys_info();
 
 std::list<std::filesystem::path> getFiles(const std::filesystem::path& dir);
 
-std::vector<byte> load_file(const std::string& path);
+std::vector<uint8_t> load_file(const std::string& path);
 
 std::string choose_file();
 

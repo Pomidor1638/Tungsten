@@ -1,248 +1,111 @@
 
 #include "cl.h"
-#include "protocol/packets.h"
-#include "protocol/protocol.h"
-#include <cstddef>
-#include <cstring>
+#include "../packets/packets.h"
 
 namespace tungsten::protocol 
 {
 
+    client_fsm::client_fsm(
+        void* ctx,
+        timeout_config cfg,
+        base_fsm_callbacks cmn_callbacks,
+        client_callbacks cl_callbacks
+    ) 
+        : base_fsm{ ctx, cfg, cmn_callbacks }
+        , cl_callbacks{ cl_callbacks }
+    {
+        pure_reset();
+    }
+
+    void client_fsm::on_reset()
+    {
+        pure_reset();
+    }
+
+    void client_fsm::on_tick()
+    {
+    }
     
-	bool client_fsm::push_event(const event& e)
+    bool client_fsm::on_disconnect_req(disconnect_type type, const disconnect_reason& reason)
     {
-        bool ok = events.push(e);
-        assert(ok && "protocol event queue overflow");
-        return ok;
-    }
-
-	bool client_fsm::push_event(event&& e)
-    {
-        bool ok = events.push(std::move(e));
-        assert(ok && "protocol event queue overflow");
-        return ok;
-    }
-
-    void client_fsm::reset_timeouts()
-    {
-        last_recv_timestamp_us = curr_timestamp_us;
-		tries_count = retry_count;
-    }
-
-    void client_fsm::reset()
-    {
-		last_timestamp_us = 0;
-		curr_timestamp_us = 0;
-		delta_us		  = 0; 
-
-        reset_timeouts();
-        events.clear();
-        main_stage = client_main_stage::disconnected;
-    }
-
-    client_fsm::client_fsm()
-    {
-        reset();
-    }
-
-	void client_fsm::check_timeouts()
-    {
-        if (main_stage == client_main_stage::disconnected)
-            return;
-        
-        uint64_t delta = curr_timestamp_us - last_recv_timestamp_us;
-        
-        if (delta > retry_interval_us)
+        if (main_stage != client_main_stage::active)
         {
-            if (tries_count)
-            {
-                tries_count--;
-            }
-            else
-            {
-                error(event_error_type::protocol_error, protocol_error::timeout);
-                main_stage = client_main_stage::disconnected;
-            }
-        }
-    }
-
-	void client_fsm::tick(uint64_t delta_time_us)
-    {
-        last_timestamp_us = curr_timestamp_us;
-        curr_timestamp_us += delta_time_us;
-        delta_us = delta_time_us; 
-        check_timeouts();
-    }
-    
-	void client_fsm::emit_connection_accepted(bool need_file_sync)
-    {
-        push_event(
-            event{
-                .type = event_type::connection_accepted,
-                .conn_accepted = {
-                    .need_file_sync = need_file_sync
-                }
-            }
-        );
-    }
-
-	void client_fsm::emit_connection_rejected(reject_reason reason)
-    {
-        push_event(
-            event{
-                .type = event_type::connection_rejected,
-                .conn_rejected = {.reason = reason }
-            }
-        );
-    }
-
-    void client_fsm::emit_send_error(protocol_error code)
-    {
-
-        packet_error error
-        {
-            .code = code
-        };
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::error, 
-                0, 
-                server_nonce,
-                sizeof(error), 
-                &error
-            ),
-            true
-        );
-    }
-
-    
-    void client_fsm::emit_send_disconnect_req(disconnect_type type, disconnect_reason reason)
-    {
-        packet_disconnect_req disconnect_req
-        {
-            .type = type,
-            .reason = reason
-        };
-
-        disconnect_req.reason.size = to_protocol16(disconnect_req.reason.size);
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::disconnect_req, 
-                0, 
-                server_nonce,
-                sizeof(disconnect_req), 
-                &disconnect_req
-            ), 
-            true
-        );
-    }
-
-    void client_fsm::emit_send_disconnect_ack()
-    {
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::disconnect_ack, 
-                0, 
-                server_nonce,
-                0, 
-                nullptr
-            ), 
-            true
-        );
-    }
-    
-	void client_fsm::emit_error(event_error_type type, protocol_error protocol)
-    {
-        push_event(
-            event{
-                .type = event_type::error,
-                .error = {
-                    .type = type,
-                    .protocol = protocol
-                }
-            }
-        );
-    }
-
-    
-	void client_fsm::error(event_error_type type, protocol_error protocol)
-    {
-
-        switch (main_stage) 
-        {
-        case client_main_stage::disconnected:
-        case client_main_stage::none:
-            break;
-        default:
-            emit_send_error(protocol);       
-            break;
+            error(fsm_error{ fsm_error_type::unexpected_packet, protocol_error::remote_violation }, true);
+            return false;
         }
 
-        emit_error(type, protocol);
-        main_stage = client_main_stage::disconnected;
+        call_disconnect_req(type, reason);
+        main_stage = client_main_stage::disconnecting;
+
+        return true;
     }
-    
-	void client_fsm::emit_send(const packet& p, bool reliable)
+
+    bool client_fsm::on_disconnect_ack()
     {
-        event_send send = {
-            .reliable = reliable
-        };
+        if (main_stage != client_main_stage::active)
+        {
+            error(fsm_error{ fsm_error_type::unexpected_packet, protocol_error::remote_violation }, true);
+            return false;
+        }
 
-        send.size = p.header.header_size + p.header.payload_size;
-        
-        packet o = p;
-        packet_header_to_protocol(o.header);
+        call_disconnect_ack();
+        main_stage = client_main_stage::disconnected;
 
-        memcpy(send.data, &o, send.size);
-
-        push_event(event{
-            .type = event_type::send,
-            .send = send
-        });
+        return true;
     }
 
-    
-	bool client_fsm::recv_conn_accept(const packet& p)
+    void client_fsm::pure_reset()
+    {
+        main_stage       = client_main_stage      ::none;
+        loading_stage    = client_loading_stage   ::none;
+        file_sync_stage  = client_file_sync_stage ::none;
+        level_sync_stage = client_level_sync_stage::none;
+    }
+
+
+
+    bool client_fsm::call_connection_accepted(bool need_file_sync)
+    {
+        if (cl_callbacks.on_conn_accepted)
+        {
+            cl_callbacks.on_conn_accepted(need_file_sync);
+        }
+        return true;
+    }
+
+    bool client_fsm::call_connection_rejected(const reject_reason& reason)
+    {
+        if (cl_callbacks.on_conn_rejected)
+        {
+            cl_callbacks.on_conn_rejected(reason);
+        }
+        return true;
+    }
+
+	bool client_fsm::process_conn_accept(const packet& p)
     {
         if (p.header.payload_size != sizeof(packet_conn_accept))
             return false;
 
         auto* conn_accept = reinterpret_cast<const packet_conn_accept*>(p.payload);
+        remote_nonce = conn_accept->server_nonce;
 
-        server_nonce = to_native64(conn_accept->server_nonce);
-        emit_connection_accepted(conn_accept->need_file_sync);
-
+        call_connection_accepted(conn_accept->need_file_sync);
+        
+        disarm_timeout();
         main_stage = client_main_stage::active;
-        
-        /*
-        main_stage    = client_main_stage   ::loading;
-        loading_stage = client_loading_stage::file_sync;
-        
-        if (conn_accept->need_file_sync)
-            file_sync_stage = client_file_sync_stage::waiting_file_manifest;
-        else
-            level_sync_stage = client_level_sync_stage::waiting_level_info;
-        */
-        
+
         return true;
     }
 
-	bool client_fsm::recv_conn_reject(const packet& p)
+	bool client_fsm::process_conn_reject(const packet& p)
     {
         if (p.header.payload_size != sizeof(packet_conn_reject))
             return false;
 
         auto* conn_reject = reinterpret_cast<const packet_conn_reject*>(p.payload);
         reject_reason reason = conn_reject->reason;
-        
-        reason.size = to_native16(reason.size);
-        emit_connection_rejected(reason);
-
+        call_connection_rejected(reason);
         main_stage = client_main_stage::disconnected;
         
         return true;
@@ -250,19 +113,19 @@ namespace tungsten::protocol
 
     bool client_fsm::on_recv_connecting(const packet& p)
     {
-        if (validate_all_packet(p, client_nonce))
+        switch (p.header.type) 
         {
-            switch (p.header.type) 
-            {
-            case packet_type::conn_accept:
-                return recv_conn_accept(p);
-            case packet_type::conn_reject:
-                return recv_conn_reject(p);
-            default:
-                break;
-            }
+        case packet_type::conn_accept:
+            return process_conn_accept(p);
+        case packet_type::conn_reject:
+            return process_conn_reject(p);
+        default:
+            error(fsm_error{
+                .type = fsm_error_type::unexpected_packet,
+                .protocol_err = protocol_error::unexcepted_packet
+                }, false);
+            break;
         }
-
         return false;
     }
 
@@ -280,22 +143,6 @@ namespace tungsten::protocol
 	bool client_fsm::on_loading_snapshot_sync(const packet& p)
     {
         return false;
-    }
-
-
-    
-    bool client_fsm::on_recv_error(const packet& p)
-    {
-        if (p.header.payload_size != sizeof(packet_error))
-            return false;
-        // TODO: packet check
-        auto* pkt_error = reinterpret_cast<const packet_error*>(p.payload);
-        // because error sends packet_error
-        // when RECEIVED error DO NOT send error too
-        emit_error(event_error_type::protocol_error, pkt_error->code);
-        main_stage = client_main_stage::disconnected;
-
-        return true;
     }
 
 	bool client_fsm::on_recv_loading(const packet& p)
@@ -317,31 +164,47 @@ namespace tungsten::protocol
         return false;
     }
 
-    
-    void client_fsm::emit_disconnected(disconnect_type type, disconnect_reason reason)
+
+    bool client_fsm::send_conn_req()
     {
-        push_event(event{
-            .type = event_type::disconnected,
-            .disconnected = {
-                .type = type,
-                .reason = reason
-            }
-        });
-    }
-    
-	bool client_fsm::on_recv_active_disconnect_req(const packet& p)
-    {
-        if (p.header.payload_size != sizeof(packet_disconnect_req))
+        packet p;
+        packet_conn_req conn_req;
+
+        conn_req.client_nonce = my_nonce;
+
+        if (!make_packet_header_internal(p, packet_type::conn_req, 0, sizeof(conn_req), &conn_req))
+        {
             return false;
+        }
 
-        auto* disc = reinterpret_cast<const packet_disconnect_req*>(p.payload);
-        emit_send_disconnect_ack();
+        return send(p);
+    }
 
-        disconnect_reason reason = disc->reason;
-        reason.size = to_native16(reason.size);
+    bool client_fsm::send_disconnect_ack()
+    {
+        packet p;
+        if (!make_packet_header_internal(p, packet_type::disconnect_ack, 0, 0, nullptr))
+        {
+            return false;
+        }
+        return send(p);
+    }
 
-        emit_disconnected(disc->type, reason);
-        main_stage = client_main_stage::disconnected;
+    bool client_fsm::call_disconnect_ack()
+    {
+        if (cl_callbacks.on_disconnect_ack)
+        {
+            cl_callbacks.on_disconnect_ack();
+        }
+        return true;
+    }
+
+    bool client_fsm::call_disconnect_req(disconnect_type type, const disconnect_reason& reason)
+    {
+        if (cl_callbacks.on_disconnect_req)
+        {
+            cl_callbacks.on_disconnect_req(type, reason);
+        }
         return true;
     }
 
@@ -357,24 +220,17 @@ namespace tungsten::protocol
 
 	bool client_fsm::on_recv_active(const packet& p)
     {
-        if (validate_all_packet(p, client_nonce))
+        switch (p.header.type) 
         {
-            switch (p.header.type) 
-            {
-            case packet_type::disconnect_req:
-                return on_recv_active_disconnect_req(p);
-                break;
-            case packet_type::sv_status_ack:
-                return on_recv_active_sv_status_ack(p);
-                break;
-            case packet_type::sv_snapshot:
-		        return on_recv_active_sv_snapshot(p);
-                break;
-            default:
-                break;
-            }
+        //case packet_type::disconnect_req:
+        //    return on_recv_active_disconnect_req(p);
+        //case packet_type::sv_status_ack:
+        //    return on_recv_active_sv_status_ack(p);
+        //case packet_type::sv_snapshot:
+	    //    return on_recv_active_sv_snapshot(p);
+        default:
+            break;
         }
-
         return false;
     }
     
@@ -383,131 +239,76 @@ namespace tungsten::protocol
         if (p.header.type != packet_type::disconnect_ack || p.header.payload_size != 0/*sizeof(packet_disconnect_ack)*/)
             return false;
 
-        emit_disconnected({}, {});
+        // call_disconnected({}, {});
         main_stage = client_main_stage::disconnected;
 
         return true;
     }
 
-	bool client_fsm::cancel()
+	//bool client_fsm::cancel()
+ //   {
+ //       using enum client_main_stage;
+ //       switch (main_stage) 
+ //       {
+	//	case connecting:
+	//	case loading:
+ //       {
+ //           // TODO: send_conn_cancel
+
+ //           main_stage = client_main_stage::disconnected;
+ //       }
+ //           return true;
+ //       default:
+ //           break;
+ //       }
+
+ //       return false;
+ //   }
+
+	bool client_fsm::open(uint64_t nonce)
+    {
+        if (main_stage != client_main_stage::disconnected)
+        {
+            error(fsm_error{ fsm_error_type::unknown_signal, protocol_error::remote_violation }, true);
+            return false;
+        }
+
+        my_nonce        = nonce;
+        remote_nonce    = NO_NONCE;
+
+        if (!send_conn_req())
+            return false;
+        
+        arm_timeout();
+        main_stage = client_main_stage::connecting;
+        return true;
+    }
+    
+    bool client_fsm::on_recv_custom()
     {
         using enum client_main_stage;
-        switch (main_stage) 
+        switch (main_stage)
         {
-		case connecting:
-		case loading:
-        {
-            packet_conn_cancel conn_cancel;
-            conn_cancel.client_nonce = to_protocol64(client_nonce);
-
-            emit_send(
-                make_packet(
-                    curr_timestamp_us,
-                    packet_type::conn_cancel,
-                    0,
-                    server_nonce,
-                    sizeof(conn_cancel), 
-                    &conn_cancel 
-                ),
-                true
-            );
-
-            main_stage = client_main_stage::disconnected;
-        }
-            return true;
+        case connecting:
+            return on_recv_connecting();
+            break;
+        case loading:
+            return on_recv_loading();
+            break;
+        case active:
+            return on_recv_active();
+            break;
+        case disconnecting:
+            return on_recv_disconnecting();
+            break;
         default:
+            error(fsm_error{
+                .type = fsm_error_type::unknown_stage,
+                .protocol_err = protocol_error::remote_violation
+                }, false);
             break;
         }
 
         return false;
     }
-
-    
-	void client_fsm::emit_conn_req()
-    {
-        packet_conn_req conn_req
-        {
-            .client_nonce = to_protocol64(client_nonce)
-        };
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us,
-                packet_type::conn_req, 
-                0,
-                -1,
-                sizeof(conn_req), 
-                &conn_req 
-            ),
-            true
-        );
-    }
-
-	bool client_fsm::connect_to(uint64_t nonce)
-    {
-        if (main_stage != client_main_stage::disconnected)
-        {
-            error(event_error_type::bad_stage, protocol_error::remote_violation);
-            return false;
-        }
-
-        client_nonce = nonce;
-        emit_conn_req();
-        main_stage = client_main_stage::connecting;
-
-        return true;
-    }
-    
-	void client_fsm::on_recv_packet(const byte_span& data)
-    {
-        bool processed = false;
-        packet p;
-        
-        if (parse_packet(p, data.size(), data.data()))
-        {
-            if (validate_all_packet(p, client_nonce))
-            {
-                if (p.header.type == packet_type::error)
-                {   
-                    processed = on_recv_error(p);
-                }
-                else 
-                {
-                    using enum client_main_stage;
-                    switch (main_stage) 
-                    {
-                    case connecting:
-                        processed = on_recv_connecting(p);
-                        break;
-                    case loading:
-                        processed = on_recv_loading(p);
-                        break;
-                    case active:
-                        processed = on_recv_active(p);
-                        break;
-                    case disconnecting:
-                        processed = on_recv_disconnecting(p);
-                        break;
-                    default:
-                        break;
-                    }
-                }
-            }
-        }  
-
-        if (!processed)
-        {
-            error(event_error_type::bad_packet, protocol_error::unexcepted_packet);
-        }
-        else
-        {
-            reset_timeouts();
-        }
-    }
-
-	bool client_fsm::poll_event(event& e)
-    {
-        return events.pop(e);   
-    }
-
 }

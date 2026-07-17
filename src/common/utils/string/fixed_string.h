@@ -4,7 +4,7 @@
 
 namespace tungsten::util::str 
 {
-    template <int N>
+    template <size_t N>
 	class fixed_string final
 	{
     public:
@@ -18,8 +18,10 @@ namespace tungsten::util::str
             , data{}
         {
             if (!str)
+            {
                 return;
-         
+            }
+            
             while (*str && size < capacity())
             {
                 data[size] = str++;
@@ -87,7 +89,7 @@ namespace tungsten::util::str
 
 
 
-    template <int N>
+    template <size_t N>
 	class fixed_wstring final
 	{
     public:

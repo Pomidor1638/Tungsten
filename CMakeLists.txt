@@ -193,9 +193,9 @@ function(tg_add_executable TARGET_NAME)
     endif()
 
     if(ARG_EXCLUDE_FROM_ALL)
-        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h")
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp")
     else()
-        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h")
+        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp")
     endif()
 
     tg_apply_common_settings(${TARGET_NAME})
@@ -220,7 +220,7 @@ endfunction()
 # =============================================================================
 
 tg_collect_sources(TG_SHARED_SOURCES
-    "common"
+    "common/formats/twad"
 )
 
 tg_collect_sources(TG_ENGINE_SOURCES
@@ -231,8 +231,8 @@ tg_collect_sources(TG_ENGINE_SOURCES
 )
 
 tg_collect_sources(TG_TBSPCOMPILER_SOURCES
-    "compiler/tbspcompiler"
-    "tbspcompiler"
+    "compiler/tbsp"
+    "tbsp"
 )
 
 tg_collect_sources(TG_TMAPEDITOR_SOURCES
@@ -241,8 +241,8 @@ tg_collect_sources(TG_TMAPEDITOR_SOURCES
 )
 
 tg_collect_sources(TG_TWADEDITOR_SOURCES
-    "editor/twadeditor"
-    "twadeditor"
+    "editor/twad"
+    "twad"
 )
 
 tg_collect_sources(TG_TEST_SOURCES

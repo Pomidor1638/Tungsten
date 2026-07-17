@@ -4,6 +4,7 @@
 #include "../common/net/net.h"
 #include "protocol/protocol.h"
 #include "../../common/utils/container/fixed_pool.h"
+#include "../../common/utils/string/fixed_string.h"
 #include <glm/glm.hpp>
 
 namespace tungsten::server
@@ -22,7 +23,7 @@ namespace tungsten::server
 
         struct Config 
         {
-            protocol::fixed_string<1024> bspfilename;
+            util::str::fixed_string<1024> bspfilename;
             int max_players;
         };
 

@@ -1,9 +1,8 @@
 
 #pragma once
 
-#include "../protocol.h"
-#include "container/ring_queue.h"
-#include "container/static_span.h"
+#include "../base_fsm/base_fsm.h"
+#include "protocol/protocol.h"
 
 namespace tungsten::protocol 
 {
@@ -104,89 +103,61 @@ namespace tungsten::protocol
         none = 0,
     };
 
-	class server_client_fsm
+
+    //typedef bool (*on_status_req_func)(void);
+    //typedef void (*on_usercmd_func)(void);
+
+    struct server_callbacks
+    {
+        //on_status_req_func on_status_req = nullptr;
+    };
+
+
+    class server_client_fsm final : public base_fsm
 	{
 	public:
-		 server_client_fsm() = default;
-		~server_client_fsm() = default;
 
-		server_client_fsm(const server_client_fsm& ) = delete;
-		server_client_fsm(      server_client_fsm&&) = delete;
-		void operator=   (const server_client_fsm& ) = delete;
-		void operator=   (      server_client_fsm&&) = delete;
+        server_client_fsm(void* ctx = nullptr, timeout_config cfg = {}, base_fsm_callbacks cmn_callbacks = {}, server_callbacks sv_callbacks = {});
 
-		void tick(uint64_t delta_time_us);
-		void reset();
+        void set_server_callbacks(server_callbacks callbacks);
 
-		bool poll_event(event& e);
-
-		void on_recv_packet(const byte_span& data);
-        
 		bool open(uint64_t cl_nonce, uint64_t sv_nonce, bool need_file_sync);
-        void close(disconnect_type type, disconnect_reason reason);
+        void close();
 
-		static bool is_conn_req  (const byte_span& data, uint64_t& client_nonce, bool& bad_version);
-		static bool is_status_req(const byte_span& data);
+        void disconnect(disconnect_type type, disconnect_reason reason) override;
 
-        static bool reject(event_send& out, uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason);
-
+		static bool is_conn_req  (const data_span& data, uint64_t& client_nonce, bool& bad_version);
+		static bool is_status_req(const data_span& data);
+        static bool reject(uint64_t timestamp_us, uint64_t cl_nonce, reject_reason reason, int max_size, int& out_size, void* out_data);
+        
 	private:
 
-		bool push_event(      event&& e);
-		bool push_event(const event&  e);
-
-        // events emitting
-		void emit_send(const packet& p, bool reliable);
-		void emit_error(event_error_type code, protocol_error protocol);
-		void emit_connection_canceled();
-
-        
-        void emit_send_error(protocol_error code);
-        
-        // void emit_recv_usercmd();
-        // void emit_recv_cl_status_req();
-
-        void emit_send_disconnect_req(disconnect_type type, disconnect_reason reason);
-        void emit_send_disconnect_ack();
-        void emit_disconnected(disconnect_type type, disconnect_reason reason);
-
-		util::container::ring_queue<event, 8> events;
-		
-		// timing
-		uint64_t    last_timestamp_us       = 0;
-		uint64_t    curr_timestamp_us       = 0;
-		uint64_t    delta_us		        = 0; 
-
-		// timeouts
-		uint64_t    last_recv_timestamp_us  = 0;
-		uint64_t    retry_interval_us       = 5;
-		int         retry_count             = 5;
-		int         tries_count             = 0;
-
-		void check_timeouts();
-		void reset_timeouts();
-
-		// connecting
-		uint64_t    server_nonce            = 0;
-		uint64_t    client_nonce            = 0;
+        void pure_reset();
 
         // utils
-        void error(event_error_type code, protocol_error protocol);
+        bool send_conn_accept(bool need_filesync);
+        bool send_disconnect_ack();
+        bool send_disconnect_req(disconnect_type type, disconnect_reason reason);
 
-        bool on_recv_error                  (const packet& p);
-		bool on_recv_loading                (const packet& p);
+        // overrides
+        void on_reset() override;
+        void on_tick()  override;
+        bool on_recv_custom() override;
+        bool on_disconnect_req(disconnect_type type, const disconnect_reason& reason) override;
+        bool on_disconnect_ack() override;
 
-		bool on_recv_loading_file_sync      (const packet& p);
-		bool on_recv_loading_level_sync     (const packet& p);
-		bool on_recv_loading_snapshot_sync  (const packet& p);
-		
-		bool on_recv_active                 (const packet& p);
+        // on_recv_* funcs
+        bool on_recv_connecting();
+		bool on_recv_loading();
+		    bool on_recv_loading_file_sync();
+		    bool on_recv_loading_level_sync();
+		    bool on_recv_loading_snapshot_sync();
+		bool on_recv_active();
+            bool on_recv_active_cl_status_req();
+		    bool on_recv_active_cl_usercmd();
+        bool on_recv_disconnecting();
 
-        bool on_recv_active_disconnect_req  (const packet& p);
-        bool on_recv_active_cl_status_req   (const packet& p);
-		bool on_recv_active_cl_usercmd      (const packet& p);
-		
-        bool on_recv_disconnecting(const packet& p);
+        server_callbacks sv_callbacks{};
 
 		server_main_stage 			main_stage			= server_main_stage			::empty;
 		server_loading_stage 		loading_stage		= server_loading_stage		::none;
