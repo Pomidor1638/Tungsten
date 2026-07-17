@@ -43,14 +43,12 @@ namespace tungsten::protocol
 
     typedef void(*on_send_func)             (void* context, const data_span& data);
     typedef void(*on_error_func)            (void* context, const fsm_error& err);
-    typedef void(*on_protocol_error_func)   (void* context, protocol_error error);
     typedef void(*on_disconnected_func)     (void* context, disconnect_type type, const disconnect_reason& reason);
 
     struct base_fsm_callbacks
     {
         on_send_func            on_send = nullptr;
         on_error_func           on_error = nullptr;
-        on_protocol_error_func  on_protocol_error = nullptr;
         on_disconnected_func    on_disconnected = nullptr;
     };
 
@@ -138,7 +136,6 @@ namespace tungsten::protocol
 
         bool call_error(const fsm_error& err);
         bool call_send(const data_span& data);
-        bool call_protocol_error(protocol_error protocol_err);
 
         //  utils:
         bool on_recv_error         (const packet_header& header, protocol_reader& reader);

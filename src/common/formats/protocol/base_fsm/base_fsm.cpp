@@ -47,16 +47,6 @@ namespace tungsten::protocol
         return true;
     }
     
-    bool base_fsm::call_protocol_error(protocol_error protocol_err)
-    {
-        auto& on_protocol_error = cmn_callbacks.on_protocol_error;
-        if (!on_protocol_error)
-            return false;
-        on_protocol_error(context, protocol_err);
-        return true;
-    }
-    
-    
 	bool base_fsm::check_timeout()
     {
         if (!timeout_tracking)
@@ -180,8 +170,9 @@ namespace tungsten::protocol
         {
             return false;
         }
-        make_packet_payload(header, static_cast<uint16_t>(payload_size), &send_packet[PACKET_HEADER_SIZE]);
 
+        make_packet_payload(header, static_cast<uint16_t>(payload_size), &send_packet[PACKET_HEADER_SIZE]);
+        
         writer.seek(0);
         if (!write_packet_struct(writer, header))
         {
