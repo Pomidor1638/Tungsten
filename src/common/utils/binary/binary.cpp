@@ -4,7 +4,8 @@
 namespace tungsten::util::binary
 {
 	binary_cursor::binary_cursor(size_t size)
-		: size_{ size }, cursor_{ 0 }
+		: cursor_{ 0 }
+		, size_{ size }
 	{}
 
 	void binary_cursor::advance(size_t count)

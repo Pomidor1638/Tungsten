@@ -1,5 +1,6 @@
 #pragma once
 #include "../../platform/endian/endian.h"
+#include "../../platform/memory/memory.h"
 
 namespace tungsten::util::binary
 {
@@ -114,21 +115,21 @@ namespace tungsten::util::binary
 
 		bool read_bytes(size_t count, void* dst) override
 		{
-			if (!dst || !data_ || !cursor_.can_advance(count))
+			if (!dst || !data || !cursor.can_advance(count))
 				return false;
 
-			auto* src = static_cast<const uint8_t*>(data_) + cursor_.tell();
+			auto* src = static_cast<const uint8_t*>(data) + cursor.tell();
 			platform::memory::memcpy(dst, src, count);
 
-			cursor_.advance(count);
+			cursor.advance(count);
 			return true;
 		}
 		bool peek_bytes(size_t count, void* dst) const override
 		{
-			if (!dst || !data_ || !cursor_.can_advance(count))
+			if (!dst || !data || !cursor.can_advance(count))
 				return false;
 
-			auto* src = static_cast<const uint8_t*>(data_) + cursor_.tell();
+			auto* src = static_cast<const uint8_t*>(data) + cursor.tell();
 			platform::memory::memcpy(dst, src, count);
 			return true;
 		}
@@ -162,13 +163,13 @@ namespace tungsten::util::binary
 
 		bool write_bytes(size_t count, const void* src) override
 		{
-			if (!src || !data_ || !cursor_.can_advance(count))
+			if (!src || !data || !cursor.can_advance(count))
 				return false;
 
-			auto* dst = static_cast<uint8_t*>(data_) + cursor_.tell();
+			auto* dst = static_cast<uint8_t*>(data) + cursor.tell();
 			platform::memory::memcpy(dst, src, count);
 
-			cursor_.advance(count);
+			cursor.advance(count);
 			return true;
 		}
 

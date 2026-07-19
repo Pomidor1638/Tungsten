@@ -38,9 +38,9 @@ namespace tungsten::util::allocator
         }
 
 
-        LinearAllocator(const LinearAllocator&) = delete;
-        LinearAllocator(LinearAllocator&&) = delete;
-        LinearAllocator& operator=(const LinearAllocator&) = delete;
+        LinearAllocator(const LinearAllocator&)             = delete;
+        LinearAllocator(LinearAllocator&&)                  = delete;
+        LinearAllocator& operator=(const LinearAllocator&)  = delete;
 
         void resize(std::size_t new_size) 
         {
@@ -109,22 +109,20 @@ namespace tungsten::util::allocator
         {
             static_assert(count > 0, "LinearAllocator allocation count must be greater than zero");
 
-            const size_t object_size      = sizeof(T);
+            const size_t object_size = sizeof(T);
             const size_t object_alignment = alignof(T);
 
             if (count > std::numeric_limits<size_t>::max() / object_size)
                 throw std::runtime_error("LinearAllocator allocation size overflow");
 
             const size_t object_padding = align_padding(offset_pointer, object_alignment);
-
-            const size_t object_offset = offset_pointer + object_padding;
-            const size_t objects_size  = object_size * count;
+            const size_t object_offset  = offset_pointer + object_padding;
+            const size_t objects_size   = object_size * count;
 
             if (object_offset < offset_pointer)
                 throw std::runtime_error("LinearAllocator allocation offset overflow");
 
             const size_t after_objects = object_offset + objects_size;
-
             if (after_objects < object_offset)
                 throw std::runtime_error("LinearAllocator allocation offset overflow");
 
@@ -133,9 +131,8 @@ namespace tungsten::util::allocator
 
             if constexpr (!std::is_trivially_destructible_v<T>)
             {
-                const size_t record_size      = sizeof (DestructorRecord);
+                const size_t record_size = sizeof(DestructorRecord);
                 const size_t record_alignment = alignof(DestructorRecord);
-
                 const size_t record_padding = align_padding(after_objects, record_alignment);
 
                 record_offset = after_objects + record_padding;
@@ -152,47 +149,43 @@ namespace tungsten::util::allocator
             const Marker allocation_marker = mark();
             T* result = reinterpret_cast<T*>(memory_block + object_offset);
 
-            DestructorRecord* record = nullptr;
+            offset_pointer += total_size;
+
+            size_t constructed = 0;
+            try
+            {
+                for (; constructed < count; constructed++)
+                {
+                    new (&result[constructed]) T(std::forward<Args>(args)...);
+                }
+            }
+            catch (...)
+            {
+                for (size_t i = constructed; i > 0; i--)
+                {
+                    result[i - 1].~T();
+                }
+                offset_pointer = allocation_marker.offset_pointer;
+                throw;
+            }
 
             if constexpr (!std::is_trivially_destructible_v<T>)
             {
-                record = reinterpret_cast<DestructorRecord*>(memory_block + record_offset);
-
+                DestructorRecord* record = reinterpret_cast<DestructorRecord*>(memory_block + record_offset);
                 new (record) DestructorRecord{};
 
                 record->destroy = &destroy_one<T>;
                 record->object = result;
-                record->count = 0;
+                record->count = count;
                 record->size_of = object_size;
                 record->previous = last_record;
 
                 last_record = record;
             }
 
-            // Reserve this block before construction. Constructors may allocate from
-            // this allocator again, and nested allocations must go after this block.
-            offset_pointer += total_size;
-
-            size_t constructed = 0;
-
-            try
-            {
-                for (; constructed < count; constructed++)
-                {
-                    new (&result[constructed]) T(std::forward<Args>(args)...);
-
-                    if constexpr (!std::is_trivially_destructible_v<T>)
-                        record->count = constructed + 1;
-                }
-            }
-            catch (...)
-            {
-                rollback(allocation_marker);
-                throw;
-            }
-
             return result;
         }
+
 
 
     private:
@@ -266,8 +259,9 @@ namespace tungsten::util::allocator
         size_t align_padding(size_t offset, size_t alignment) const
         {
             const uintptr_t address = reinterpret_cast<uintptr_t>(memory_block) + offset;
-            return (alignment - (address % alignment)) % alignment;
+            return (-address) & (alignment - 1);
         }
+
 
         size_t offset_from_pointer(const void* pointer) const
         {
