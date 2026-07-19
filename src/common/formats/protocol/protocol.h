@@ -9,8 +9,6 @@ namespace tungsten::protocol
 	constexpr size_t	MAX_PACKET_SIZE = 1024;
 	constexpr uint64_t	NO_NONCE		= UINT64_MAX;
 
-
-
 	// Fixed string with explicit size. It does not require null termination.
 
 	template <uint32_t N>
@@ -58,7 +56,7 @@ namespace tungsten::protocol
 		other,
 	};
 
-	using protocol_reader = util::binary::binary_reader<util::binary::bin_endian_type::big>;
-	using protocol_writer = util::binary::binary_writer<util::binary::bin_endian_type::big>;
+	using protocol_reader = util::binary::memory_reader<util::binary::bin_endian_type::big>;
+	using protocol_writer = util::binary::memory_writer<util::binary::bin_endian_type::big>;
 }
 

@@ -1,45 +1,26 @@
-common/formats/protocol/base_fsm.cpp
+common/formats/protocol/base_fsm/base_fsm.cpp
 ```
 
 
 #include "base_fsm.h"
-#include "packets.h"
-#include "protocol/protocol.h"
+
+#include "../protocol.h"
+#include "../packets/packets.h"
+#include "../../../platform/memory/memory.h"
 
 namespace tungsten::protocol 
 {
 
     
     
-    base_fsm::base_fsm(void* ctx, base_fsm_callbacks callbacks, timeout_config cfg)
+    base_fsm::base_fsm(void* ctx, timeout_config cfg, base_fsm_callbacks callbacks)
         : context{ctx}
+        , timeout_cfg{ cfg }
         , cmn_callbacks{callbacks}
-        , timeout_cfg{cfg}
+        , curr_timestamp_us{0}
     {
         pure_reset();
     }
-
-    base_fsm::base_fsm(void* ctx, base_fsm_callbacks callbacks)
-        : base_fsm(ctx, callbacks, timeout_config{})
-    {
-    }
-    
-    base_fsm::base_fsm(base_fsm_callbacks callbacks)
-        : base_fsm(nullptr, callbacks)
-    {
-    }
-
-    base_fsm::base_fsm()
-        : base_fsm(nullptr, base_fsm_callbacks{})
-    {           
-    }
-
-    base_fsm::~base_fsm()
-    {
-    }
-
-
-    
     
     bool base_fsm::call_disconnected(disconnect_type type, const disconnect_reason& reason)
     {
@@ -68,16 +49,6 @@ namespace tungsten::protocol
         return true;
     }
     
-    bool base_fsm::call_protocol_error(protocol_error protocol_err)
-    {
-        auto& on_protocol_error = cmn_callbacks.on_protocol_error;
-        if (!on_protocol_error)
-            return false;
-        on_protocol_error(context, protocol_err);
-        return true;
-    }
-    
-    
 	bool base_fsm::check_timeout()
     {
         if (!timeout_tracking)
@@ -105,11 +76,9 @@ namespace tungsten::protocol
 
     void base_fsm::reset_timing()
     {
-        curr_timestamp_us   = 0;
         curr_delta_us       = 0; 
     }
 
-    
     void base_fsm::pure_reset()
     {
         reset_timing();
@@ -142,37 +111,10 @@ namespace tungsten::protocol
     {
         context = ctx;
     }
-    
-    
-    
-    void base_fsm::emit_send(const data_span& s)
-    {
-        if (cmn_callbacks.on_send)
-        {
-            cmn_callbacks.on_send(
-                context,
-                s
-            );
-        }
-    }
 
-    bool base_fsm::make_packet_internal
-    (
-        packet&     out,
-        packet_type type,
-        uint8_t     flags,
-        uint16_t    payload_size,
-        const void* payload
-    ) {
-        if (!make_packet(
-            out, 
-            get_timestamp_us(), 
-            type, 
-            flags, 
-            remote_nonce, 
-            payload_size, 
-            payload
-        ))
+    bool base_fsm::make_packet_header_internal(packet_header& out, packet_type type, uint8_t flags) 
+    {
+        if (!make_packet_header(out, get_timestamp_us(), type, flags, remote_nonce))
         {
             fatal_error(fsm_error{fsm_error_type::make_violation});
             return false;
@@ -203,40 +145,46 @@ namespace tungsten::protocol
         return timeout_tracking;
     }
 
-    bool base_fsm::send(const packet& native_packet)
-    {
-        const uint16_t size     = native_packet.header.header_size + native_packet.header.payload_size;
-        packet protocol_packet  = native_packet;
-        
-        if (!parse_to_protocol_packet(size, protocol_packet))
-        {
-            fatal_error(fsm_error{fsm_error_type::corruted_packet});
-            return false;
-        }
-
-        emit_send(data_span{size, &protocol_packet});
-        return true;
-    }
-
     bool base_fsm::send_protocol_error(protocol_error type)
     {
-        packet_error err {.code = type};
-        packet p;
+        packet_error err{ .code = type };
+        packet_header header;
+        packet_t send_packet;
 
-        if (!make_packet_internal(p, packet_type::protocol_error, 0, sizeof(err), &err))
-        {   
-            fatal_error(fsm_error{fsm_error_type::make_violation});
+        protocol_writer writer { sizeof(send_packet), &send_packet };
+
+        if (!writer.seek(PACKET_HEADER_SIZE))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
             return false;
         }
 
-        if (!send(p))
-        {   
-            fatal_error(fsm_error{fsm_error_type::send_violation});
+        if (!write_packet_struct(writer, err))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
             return false;
         }
+
+        size_t payload_size = writer.tell() - PACKET_HEADER_SIZE;
+        size_t total_packet_size = writer.tell();
+
+        if (!make_packet_header_internal(header, packet_type::protocol_error, 0))
+        {
+            return false;
+        }
+
+        make_packet_payload(header, static_cast<uint16_t>(payload_size), &send_packet[PACKET_HEADER_SIZE]);
         
-        return true;
+        writer.seek(0);
+        if (!write_packet_struct(writer, header))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
+            return false;
+        }
+
+        return call_send(data_span{ total_packet_size, send_packet });
     }
+
     
 
     void base_fsm::error(fsm_error err, bool send_err)
@@ -261,58 +209,92 @@ namespace tungsten::protocol
         reset();
     }
 
-    bool base_fsm::on_recv_error(const packet& p)
+    bool base_fsm::on_recv_error(const packet_header& header, protocol_reader& reader)
     {
-        // packet check does parse_packet
-        auto* err = reinterpret_cast<const packet_error*>(p.payload);  
-        fatal_error(fsm_error{.type = fsm_error_type::remote_violation, .protocol_err = err->code});
+        packet_error err;
+
+        if (!read_packet_struct(reader, err))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet, protocol_error::corrupted_packet });
+            return false;
+        }
+
+        fatal_error(fsm_error{fsm_error_type::remote_violation, err.code});
         return true;
     }
 
     
-    bool base_fsm::on_recv_disconnect_ack (const packet& p)
+    bool base_fsm::on_recv_disconnect_ack(const packet_header& header, protocol_reader& reader)
     {
         return on_disconnect_ack();
     }
 
-    bool base_fsm::on_recv_disconnect_req (const packet& p)
+    bool base_fsm::on_recv_disconnect_req(const packet_header& header, protocol_reader& reader)
     {
-        auto* disconnect_req = reinterpret_cast<const packet_disconnect_req*>(p.payload);
-        return on_disconnect_req(disconnect_req->type, disconnect_req->reason);
+        packet_disconnect_req disconnect_req;
+        if (!read_packet_struct(reader, disconnect_req))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet, protocol_error::corrupted_packet });
+            return false;
+        }
+
+        return on_disconnect_req(disconnect_req.type, disconnect_req.reason);
     }
 
     void base_fsm::on_recv(const data_span& data)
     {
-        packet p;
-        bool processed = false;
-
-        if (parse_packet(p, data.size(), data.data()))
+        if (!data.data() || data.size() > MAX_PACKET_SIZE)
         {
-            using enum packet_type;
-            switch (p.header.type) 
-            {
-            case protocol_error:
-                processed = on_recv_error(p);
-                break;
-            case disconnect_ack:
-                processed = on_recv_disconnect_ack(p);
-                break;
-            case disconnect_req:
-                processed = on_recv_disconnect_req(p);
-                break;
-            default:
-                processed = on_recv_custom(p);
-                break;
-            }
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
+            return;
         }
-        
-        if (processed && timeout_tracking) // it could be removed
+
+        protocol_reader reader{ data.size(), data.data() };
+        packet_header header;
+
+        if (!read_packet_struct(reader, header))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
+            return;
+        }
+
+        if (!validate_header(header, reader.remaining(), reader.peak()))
+        {
+            fatal_error(fsm_error{ fsm_error_type::corruted_packet });
+            return;
+        }
+
+        bool processed = false;
+        using enum packet_type;
+
+        switch (header.type)
+        {
+        case protocol_error:
+            processed = on_recv_error(header, reader);
+            break;
+        case disconnect_ack:
+            processed = on_recv_disconnect_ack(header, reader);
+            break;
+        case disconnect_req:
+            processed = on_recv_disconnect_req(header, reader);
+            break;
+        default:
+            processed = on_recv_custom(header, reader);
+            break;
+        }
+
+        if (!processed)
+        {
+            fatal_error(fsm_error{ fsm_error_type::unexpected_packet });
+            return;
+        }
+
+        if (timeout_tracking)
         {
             reset_timeout();
         }
     }
 
-    
     uint64_t base_fsm::get_timestamp_us() const
     {
         return curr_timestamp_us;
@@ -332,23 +314,24 @@ namespace tungsten::protocol
 }
 ```
 
-common/formats/protocol/base_fsm.h
+common/formats/protocol/base_fsm/base_fsm.h
 ```
 
 #pragma once
 
-#include "protocol.h"
-#include <eh.h>
+#include "../protocol.h"
 
-namespace tungsten::protocol 
+namespace tungsten::protocol
 {
-    
-	enum class fsm_error_type
-	{
-		none = 0,
+    struct      packet_header;
+    enum class  packet_type : uint8_t;
+
+    enum class fsm_error_type
+    {
+        none = 0,
 
         remote_timeout,
-    
+
         unknown_signal,
         unknown_packet,
         unknown_stage,
@@ -364,51 +347,45 @@ namespace tungsten::protocol
 
         internal_violation,
 
-		remote_violation,
-	};
+        remote_violation,
+    };
 
-	struct fsm_error
-	{
-		fsm_error_type type;
-		union
-		{
-			protocol_error protocol_err;
-		};
-	};
+    struct fsm_error
+    {
+        fsm_error_type type;
+        union
+        {
+            protocol_error protocol_err;
+        };
+    };
+
+    typedef void(*on_send_func)             (void* context, const data_span& data);
+    typedef void(*on_error_func)            (void* context, const fsm_error& err);
+    typedef void(*on_disconnected_func)     (void* context, disconnect_type type, const disconnect_reason& reason);
+
+    struct base_fsm_callbacks
+    {
+        on_send_func            on_send = nullptr;
+        on_error_func           on_error = nullptr;
+        on_disconnected_func    on_disconnected = nullptr;
+    };
+
+    struct timeout_config
+    {
+        uint64_t interval_us = 5'000'000; // 5 s.
+    };
 
     class base_fsm
     {
     public:
-
-        typedef void(*on_send_func)             (void* context, const data_span& data); 
-        typedef void(*on_error_func)            (void* context, const fsm_error& err);
-        typedef void(*on_protocol_error_func)   (void* context, protocol_error error);
-        typedef void(*on_disconnected_func)     (void* context, disconnect_type type, const disconnect_reason& reason);
-
-        struct base_fsm_callbacks 
-        {
-            on_send_func            on_send             = nullptr;
-            on_error_func           on_error            = nullptr;
-            on_protocol_error_func  on_protocol_error   = nullptr;
-            on_disconnected_func    on_disconnected     = nullptr;
-        };
-
-        struct timeout_config
-        {
-            uint64_t interval_us = 5'000'000; // 5 s.
-        };
-
-        base_fsm();
-        base_fsm(base_fsm_callbacks callbacks);
-        base_fsm(void* ctx, base_fsm_callbacks callbacks);
-        base_fsm(void* ctx, base_fsm_callbacks callbacks, timeout_config cfg);
+        base_fsm(void* ctx = nullptr, timeout_config cfg = {}, base_fsm_callbacks callbacks = {});
 
         virtual ~base_fsm();
 
-        base_fsm      (const base_fsm& ) = delete;
-        base_fsm      (      base_fsm&&) = delete;
-        void operator=(const base_fsm& ) = delete;
-        void operator=(      base_fsm&&) = delete;
+        base_fsm(const base_fsm&) = delete;
+        base_fsm(base_fsm&&) = delete;
+        void operator=(const base_fsm&) = delete;
+        void operator=(base_fsm&&) = delete;
 
         // configs
         void set_context(void* ctx);
@@ -420,38 +397,28 @@ namespace tungsten::protocol
         void tick(uint64_t delta_us);
         virtual void disconnect(disconnect_type type, disconnect_reason reason) = 0;
         void on_recv(const data_span& data);
-    
+
         uint64_t get_timestamp_us() const;
         uint64_t get_delta_us()     const;
 
     protected:
 
+        // sending/receiving
+        uint64_t my_nonce = 0;
+        uint64_t remote_nonce = 0;
+
         // utils
-        bool send(const packet& p);
         void error(fsm_error err, bool send_err);
-        
+
         void arm_timeout();
         void disarm_timeout();
         void touch_timeout();
 
         bool get_timeout_tracking() const;
 
-		//  sending/receiving
-		uint64_t my_nonce       = 0;
-		uint64_t remote_nonce   = 0;
+        bool make_packet_header_internal(packet_header& out, packet_type type, uint8_t flags);
 
-        
-        bool make_packet_internal
-        (
-            packet&     out,
-            packet_type type,
-            uint8_t     flags,
-            uint16_t    payload_size,
-            const void* payload
-        );
-
-        // 
-        virtual bool on_recv_custom(const packet& p) = 0;
+        virtual bool on_recv_custom(const packet_header& header, protocol_reader& reader) = 0;
         virtual void on_reset() = 0;
         virtual void on_tick() = 0;
 
@@ -462,45 +429,40 @@ namespace tungsten::protocol
 
     private:
 
-    
         void fatal_error(fsm_error err);
-        void emit_send(const data_span& d);
 
-    	//  timing:
-		uint64_t    curr_timestamp_us   = 0;
-		uint64_t    curr_delta_us       = 0;
+        //  timing:
+        uint64_t    curr_timestamp_us = 0;
+        uint64_t    curr_delta_us = 0;
 
         void        update_timing(uint64_t delta_us);
-        void        reset_timing(); 
+        void        reset_timing();
 
-		//  timeouts:
+        //  timeouts:
         timeout_config timeout_cfg{};
-        
-        bool timeout_tracking = false;
-        uint64_t last_recv_timestamp_us  = 0;
 
-		bool check_timeout();
-		void reset_timeout();
+        bool timeout_tracking = false;
+        uint64_t last_recv_timestamp_us = 0;
+
+        bool check_timeout();
+        void reset_timeout();
         void timeout();
 
         //  callbacks:
-        void*            context = nullptr;        
+        void* context = nullptr;
         base_fsm_callbacks cmn_callbacks{};
-    
+
         bool call_error(const fsm_error& err);
         bool call_send(const data_span& data);
-        bool call_protocol_error(protocol_error protocol_err);
 
         //  utils:
-        bool on_recv_error          (const packet& p);
-        bool on_recv_disconnect_ack (const packet& p);
-        bool on_recv_disconnect_req (const packet& p);
+        bool on_recv_error         (const packet_header& header, protocol_reader& reader);
+        bool on_recv_disconnect_ack(const packet_header& header, protocol_reader& reader);
+        bool on_recv_disconnect_req(const packet_header& header, protocol_reader& reader);
 
         bool send_protocol_error(protocol_error code);
 
-
         void pure_reset();
-
     };
 }
 ```
@@ -509,249 +471,112 @@ common/formats/protocol/cl/cl.cpp
 ```
 
 #include "cl.h"
-#include "protocol/packets.h"
-#include "protocol/protocol.h"
-#include <cstddef>
-#include <cstring>
+#include "../packets/packets.h"
 
 namespace tungsten::protocol 
 {
 
+    client_fsm::client_fsm(
+        void* ctx,
+        timeout_config cfg,
+        base_fsm_callbacks cmn_callbacks,
+        client_callbacks cl_callbacks
+    ) 
+        : base_fsm{ ctx, cfg, cmn_callbacks }
+        , cl_callbacks{ cl_callbacks }
+    {
+        pure_reset();
+    }
+
+    void client_fsm::on_reset()
+    {
+        pure_reset();
+    }
+
+    void client_fsm::on_tick()
+    {
+    }
     
-	bool client_fsm::push_event(const event& e)
+    bool client_fsm::on_disconnect_req(disconnect_type type, const disconnect_reason& reason)
     {
-        bool ok = events.push(e);
-        assert(ok && "protocol event queue overflow");
-        return ok;
-    }
-
-	bool client_fsm::push_event(event&& e)
-    {
-        bool ok = events.push(std::move(e));
-        assert(ok && "protocol event queue overflow");
-        return ok;
-    }
-
-    void client_fsm::reset_timeouts()
-    {
-        last_recv_timestamp_us = curr_timestamp_us;
-		tries_count = retry_count;
-    }
-
-    void client_fsm::reset()
-    {
-		last_timestamp_us = 0;
-		curr_timestamp_us = 0;
-		delta_us		  = 0; 
-
-        reset_timeouts();
-        events.clear();
-        main_stage = client_main_stage::disconnected;
-    }
-
-    client_fsm::client_fsm()
-    {
-        reset();
-    }
-
-	void client_fsm::check_timeouts()
-    {
-        if (main_stage == client_main_stage::disconnected)
-            return;
-        
-        uint64_t delta = curr_timestamp_us - last_recv_timestamp_us;
-        
-        if (delta > retry_interval_us)
+        if (main_stage != client_main_stage::active)
         {
-            if (tries_count)
-            {
-                tries_count--;
-            }
-            else
-            {
-                error(event_error_type::protocol_error, protocol_error::timeout);
-                main_stage = client_main_stage::disconnected;
-            }
-        }
-    }
-
-	void client_fsm::tick(uint64_t delta_time_us)
-    {
-        last_timestamp_us = curr_timestamp_us;
-        curr_timestamp_us += delta_time_us;
-        delta_us = delta_time_us; 
-        check_timeouts();
-    }
-    
-	void client_fsm::emit_connection_accepted(bool need_file_sync)
-    {
-        push_event(
-            event{
-                .type = event_type::connection_accepted,
-                .conn_accepted = {
-                    .need_file_sync = need_file_sync
-                }
-            }
-        );
-    }
-
-	void client_fsm::emit_connection_rejected(reject_reason reason)
-    {
-        push_event(
-            event{
-                .type = event_type::connection_rejected,
-                .conn_rejected = {.reason = reason }
-            }
-        );
-    }
-
-    void client_fsm::emit_send_error(protocol_error code)
-    {
-
-        packet_error error
-        {
-            .code = code
-        };
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::error, 
-                0, 
-                server_nonce,
-                sizeof(error), 
-                &error
-            ),
-            true
-        );
-    }
-
-    
-    void client_fsm::emit_send_disconnect_req(disconnect_type type, disconnect_reason reason)
-    {
-        packet_disconnect_req disconnect_req
-        {
-            .type = type,
-            .reason = reason
-        };
-
-        disconnect_req.reason.size = to_protocol16(disconnect_req.reason.size);
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::disconnect_req, 
-                0, 
-                server_nonce,
-                sizeof(disconnect_req), 
-                &disconnect_req
-            ), 
-            true
-        );
-    }
-
-    void client_fsm::emit_send_disconnect_ack()
-    {
-        emit_send(
-            make_packet(
-                curr_timestamp_us, 
-                packet_type::disconnect_ack, 
-                0, 
-                server_nonce,
-                0, 
-                nullptr
-            ), 
-            true
-        );
-    }
-    
-	void client_fsm::emit_error(event_error_type type, protocol_error protocol)
-    {
-        push_event(
-            event{
-                .type = event_type::error,
-                .error = {
-                    .type = type,
-                    .protocol = protocol
-                }
-            }
-        );
-    }
-
-    
-	void client_fsm::error(event_error_type type, protocol_error protocol)
-    {
-
-        switch (main_stage) 
-        {
-        case client_main_stage::disconnected:
-        case client_main_stage::none:
-            break;
-        default:
-            emit_send_error(protocol);       
-            break;
+            error(fsm_error{ fsm_error_type::unexpected_packet, protocol_error::remote_violation }, true);
+            return false;
         }
 
-        emit_error(type, protocol);
-        main_stage = client_main_stage::disconnected;
+        call_disconnect_req(type, reason);
+        main_stage = client_main_stage::disconnecting;
+
+        return true;
     }
-    
-	void client_fsm::emit_send(const packet& p, bool reliable)
+
+    bool client_fsm::on_disconnect_ack()
     {
-        event_send send = {
-            .reliable = reliable
-        };
+        if (main_stage != client_main_stage::active)
+        {
+            error(fsm_error{ fsm_error_type::unexpected_packet, protocol_error::remote_violation }, true);
+            return false;
+        }
 
-        send.size = p.header.header_size + p.header.payload_size;
-        
-        packet o = p;
-        packet_header_to_protocol(o.header);
+        call_disconnect_ack();
+        main_stage = client_main_stage::disconnected;
 
-        memcpy(send.data, &o, send.size);
-
-        push_event(event{
-            .type = event_type::send,
-            .send = send
-        });
+        return true;
     }
 
-    
-	bool client_fsm::recv_conn_accept(const packet& p)
+    void client_fsm::pure_reset()
+    {
+        main_stage       = client_main_stage      ::none;
+        loading_stage    = client_loading_stage   ::none;
+        file_sync_stage  = client_file_sync_stage ::none;
+        level_sync_stage = client_level_sync_stage::none;
+    }
+
+
+
+    bool client_fsm::call_connection_accepted(bool need_file_sync)
+    {
+        if (cl_callbacks.on_conn_accepted)
+        {
+            cl_callbacks.on_conn_accepted(need_file_sync);
+        }
+        return true;
+    }
+
+    bool client_fsm::call_connection_rejected(const reject_reason& reason)
+    {
+        if (cl_callbacks.on_conn_rejected)
+        {
+            cl_callbacks.on_conn_rejected(reason);
+        }
+        return true;
+    }
+
+	bool client_fsm::process_conn_accept(const packet& p)
     {
         if (p.header.payload_size != sizeof(packet_conn_accept))
             return false;
 
         auto* conn_accept = reinterpret_cast<const packet_conn_accept*>(p.payload);
+        remote_nonce = conn_accept->server_nonce;
 
-        server_nonce = to_native64(conn_accept->server_nonce);
-        emit_connection_accepted(conn_accept->need_file_sync);
-
+        call_connection_accepted(conn_accept->need_file_sync);
+        
+        disarm_timeout();
         main_stage = client_main_stage::active;
-        
-        /*
-        main_stage    = client_main_stage   ::loading;
-        loading_stage = client_loading_stage::file_sync;
-        
-        if (conn_accept->need_file_sync)
-            file_sync_stage = client_file_sync_stage::waiting_file_manifest;
-        else
-            level_sync_stage = client_level_sync_stage::waiting_level_info;
-        */
-        
+
         return true;
     }
 
-	bool client_fsm::recv_conn_reject(const packet& p)
+	bool client_fsm::process_conn_reject(const packet& p)
     {
         if (p.header.payload_size != sizeof(packet_conn_reject))
             return false;
 
         auto* conn_reject = reinterpret_cast<const packet_conn_reject*>(p.payload);
         reject_reason reason = conn_reject->reason;
-        
-        reason.size = to_native16(reason.size);
-        emit_connection_rejected(reason);
-
+        call_connection_rejected(reason);
         main_stage = client_main_stage::disconnected;
         
         return true;
@@ -759,19 +584,19 @@ namespace tungsten::protocol
 
     bool client_fsm::on_recv_connecting(const packet& p)
     {
-        if (validate_all_packet(p, client_nonce))
+        switch (p.header.type) 
         {
-            switch (p.header.type) 
-            {
-            case packet_type::conn_accept:
-                return recv_conn_accept(p);
-            case packet_type::conn_reject:
-                return recv_conn_reject(p);
-            default:
-                break;
-            }
+        case packet_type::conn_accept:
+            return process_conn_accept(p);
+        case packet_type::conn_reject:
+            return process_conn_reject(p);
+        default:
+            error(fsm_error{
+                .type = fsm_error_type::unexpected_packet,
+                .protocol_err = protocol_error::unexcepted_packet
+                }, false);
+            break;
         }
-
         return false;
     }
 
@@ -789,22 +614,6 @@ namespace tungsten::protocol
 	bool client_fsm::on_loading_snapshot_sync(const packet& p)
     {
         return false;
-    }
-
-
-    
-    bool client_fsm::on_recv_error(const packet& p)
-    {
-        if (p.header.payload_size != sizeof(packet_error))
-            return false;
-        // TODO: packet check
-        auto* pkt_error = reinterpret_cast<const packet_error*>(p.payload);
-        // because error sends packet_error
-        // when RECEIVED error DO NOT send error too
-        emit_error(event_error_type::protocol_error, pkt_error->code);
-        main_stage = client_main_stage::disconnected;
-
-        return true;
     }
 
 	bool client_fsm::on_recv_loading(const packet& p)
@@ -826,31 +635,47 @@ namespace tungsten::protocol
         return false;
     }
 
-    
-    void client_fsm::emit_disconnected(disconnect_type type, disconnect_reason reason)
+
+    bool client_fsm::send_conn_req()
     {
-        push_event(event{
-            .type = event_type::disconnected,
-            .disconnected = {
-                .type = type,
-                .reason = reason
-            }
-        });
-    }
-    
-	bool client_fsm::on_recv_active_disconnect_req(const packet& p)
-    {
-        if (p.header.payload_size != sizeof(packet_disconnect_req))
+        packet p;
+        packet_conn_req conn_req;
+
+        conn_req.client_nonce = my_nonce;
+
+        if (!make_packet_header_internal(p, packet_type::conn_req, 0, sizeof(conn_req), &conn_req))
+        {
             return false;
+        }
 
-        auto* disc = reinterpret_cast<const packet_disconnect_req*>(p.payload);
-        emit_send_disconnect_ack();
+        return send(p);
+    }
 
-        disconnect_reason reason = disc->reason;
-        reason.size = to_native16(reason.size);
+    bool client_fsm::send_disconnect_ack()
+    {
+        packet p;
+        if (!make_packet_header_internal(p, packet_type::disconnect_ack, 0, 0, nullptr))
+        {
+            return false;
+        }
+        return send(p);
+    }
 
-        emit_disconnected(disc->type, reason);
-        main_stage = client_main_stage::disconnected;
+    bool client_fsm::call_disconnect_ack()
+    {
+        if (cl_callbacks.on_disconnect_ack)
+        {
+            cl_callbacks.on_disconnect_ack();
+        }
+        return true;
+    }
+
+    bool client_fsm::call_disconnect_req(disconnect_type type, const disconnect_reason& reason)
+    {
+        if (cl_callbacks.on_disconnect_req)
+        {
+            cl_callbacks.on_disconnect_req(type, reason);
+        }
         return true;
     }
 
@@ -866,24 +691,17 @@ namespace tungsten::protocol
 
 	bool client_fsm::on_recv_active(const packet& p)
     {
-        if (validate_all_packet(p, client_nonce))
+        switch (p.header.type) 
         {
-            switch (p.header.type) 
-            {
-            case packet_type::disconnect_req:
-                return on_recv_active_disconnect_req(p);
-                break;
-            case packet_type::sv_status_ack:
-                return on_recv_active_sv_status_ack(p);
-                break;
-            case packet_type::sv_snapshot:
-		        return on_recv_active_sv_snapshot(p);
-                break;
-            default:
-                break;
-            }
+        //case packet_type::disconnect_req:
+        //    return on_recv_active_disconnect_req(p);
+        //case packet_type::sv_status_ack:
+        //    return on_recv_active_sv_status_ack(p);
+        //case packet_type::sv_snapshot:
+	    //    return on_recv_active_sv_snapshot(p);
+        default:
+            break;
         }
-
         return false;
     }
     
@@ -892,133 +710,78 @@ namespace tungsten::protocol
         if (p.header.type != packet_type::disconnect_ack || p.header.payload_size != 0/*sizeof(packet_disconnect_ack)*/)
             return false;
 
-        emit_disconnected({}, {});
+        // call_disconnected({}, {});
         main_stage = client_main_stage::disconnected;
 
         return true;
     }
 
-	bool client_fsm::cancel()
+	//bool client_fsm::cancel()
+ //   {
+ //       using enum client_main_stage;
+ //       switch (main_stage) 
+ //       {
+	//	case connecting:
+	//	case loading:
+ //       {
+ //           // TODO: send_conn_cancel
+
+ //           main_stage = client_main_stage::disconnected;
+ //       }
+ //           return true;
+ //       default:
+ //           break;
+ //       }
+
+ //       return false;
+ //   }
+
+	bool client_fsm::open(uint64_t nonce)
+    {
+        if (main_stage != client_main_stage::disconnected)
+        {
+            error(fsm_error{ fsm_error_type::unknown_signal, protocol_error::remote_violation }, true);
+            return false;
+        }
+
+        my_nonce        = nonce;
+        remote_nonce    = NO_NONCE;
+
+        if (!send_conn_req())
+            return false;
+        
+        arm_timeout();
+        main_stage = client_main_stage::connecting;
+        return true;
+    }
+    
+    bool client_fsm::on_recv_custom()
     {
         using enum client_main_stage;
-        switch (main_stage) 
+        switch (main_stage)
         {
-		case connecting:
-		case loading:
-        {
-            packet_conn_cancel conn_cancel;
-            conn_cancel.client_nonce = to_protocol64(client_nonce);
-
-            emit_send(
-                make_packet(
-                    curr_timestamp_us,
-                    packet_type::conn_cancel,
-                    0,
-                    server_nonce,
-                    sizeof(conn_cancel), 
-                    &conn_cancel 
-                ),
-                true
-            );
-
-            main_stage = client_main_stage::disconnected;
-        }
-            return true;
+        case connecting:
+            return on_recv_connecting();
+            break;
+        case loading:
+            return on_recv_loading();
+            break;
+        case active:
+            return on_recv_active();
+            break;
+        case disconnecting:
+            return on_recv_disconnecting();
+            break;
         default:
+            error(fsm_error{
+                .type = fsm_error_type::unknown_stage,
+                .protocol_err = protocol_error::remote_violation
+                }, false);
             break;
         }
 
         return false;
     }
-
-    
-	void client_fsm::emit_conn_req()
-    {
-        packet_conn_req conn_req
-        {
-            .client_nonce = to_protocol64(client_nonce)
-        };
-
-        emit_send(
-            make_packet(
-                curr_timestamp_us,
-                packet_type::conn_req, 
-                0,
-                -1,
-                sizeof(conn_req), 
-                &conn_req 
-            ),
-            true
-        );
-    }
-
-	bool client_fsm::connect_to(uint64_t nonce)
-    {
-        if (main_stage != client_main_stage::disconnected)
-        {
-            error(event_error_type::bad_stage, protocol_error::remote_violation);
-            return false;
-        }
-
-        client_nonce = nonce;
-        emit_conn_req();
-        main_stage = client_main_stage::connecting;
-
-        return true;
-    }
-    
-	void client_fsm::on_recv_packet(const byte_span& data)
-    {
-        bool processed = false;
-        packet p;
-        
-        if (parse_packet(p, data.size(), data.data()))
-        {
-            if (validate_all_packet(p, client_nonce))
-            {
-                if (p.header.type == packet_type::error)
-                {   
-                    processed = on_recv_error(p);
-                }
-                else 
-                {
-                    using enum client_main_stage;
-                    switch (main_stage) 
-                    {
-                    case connecting:
-                        processed = on_recv_connecting(p);
-                        break;
-                    case loading:
-                        processed = on_recv_loading(p);
-                        break;
-                    case active:
-                        processed = on_recv_active(p);
-                        break;
-                    case disconnecting:
-                        processed = on_recv_disconnecting(p);
-                        break;
-                    default:
-                        break;
-                    }
-                }
-            }
-        }  
-
-        if (!processed)
-        {
-            error(event_error_type::bad_packet, protocol_error::unexcepted_packet);
-        }
-        else
-        {
-            reset_timeouts();
-        }
-    }
-
-	bool client_fsm::poll_event(event& e)
-    {
-        return events.pop(e);   
-    }
-
 }
 ```
 
@@ -1027,7 +790,7 @@ common/formats/protocol/cl/cl.h
 
 #pragma once
 
-#include "../base_fsm.h"
+#include "../base_fsm/base_fsm.h"
 #include "container/ring_queue.h"
 
 namespace tungsten::protocol 
@@ -1112,9 +875,9 @@ namespace tungsten::protocol
 	{
 		none = 0,
 
-		file_sync,
-		level_sync,
-		snapshot_sync
+        file_sync,
+        level_sync,
+        snapshot_sync
 	};
 
     enum class client_file_sync_stage
@@ -1128,53 +891,69 @@ namespace tungsten::protocol
     };
 
 
+    typedef void(*on_connection_accepted_func)(bool need_file_sync);
+    typedef void(*on_connection_rejected_func)(const reject_reason& reason);
+    typedef void(*on_disconnect_req_func)(disconnect_type type, const disconnect_reason& reason);
+    typedef void(*on_disconnect_ack_func)();
 
-	class client_fsm : public base_fsm
+    struct client_callbacks
+    {
+        on_connection_accepted_func on_conn_accepted = nullptr;
+        on_connection_rejected_func on_conn_rejected = nullptr;
+        on_disconnect_req_func      on_disconnect_req = nullptr;
+        on_disconnect_ack_func      on_disconnect_ack = nullptr;
+    };
+
+
+	class client_fsm final : public base_fsm
 	{
 	public:
 
-		bool connect_to(uint64_t nonce);	
-		// bool internal_connect(uint64_t nonce);
+        client_fsm(void* ctx = nullptr, timeout_config cfg = {}, base_fsm_callbacks cmn_callbacks = {}, client_callbacks cl_callbacks = {});
 
-		// TODO: need to fix cancel conqurency
+		bool open(uint64_t nonce);	
+
         void disconnect(disconnect_type type, disconnect_reason reason) override;
         void cancel();
 
 	private:
-		
-        client_main_stage main_stage = client_main_stage::none;
 
-        // loading
-        client_loading_stage loading_stage = client_loading_stage::none;
-		// file_sync
-		client_file_sync_stage file_sync_stage = client_file_sync_stage::none;
+        bool on_recv_custom() override;
+        void on_reset() override;
+        void on_tick() override;
+
+        bool on_disconnect_req(disconnect_type type, const disconnect_reason& reason) override;
+        bool on_disconnect_ack() override;
+
+        // redefenition
+        void pure_reset();
+
+        client_callbacks cl_callbacks = {};
+
+        client_main_stage       main_stage       = client_main_stage      ::none;
+        client_loading_stage    loading_stage    = client_loading_stage   ::none;
+		client_file_sync_stage  file_sync_stage  = client_file_sync_stage ::none;
 		client_level_sync_stage level_sync_stage = client_level_sync_stage::none;
 
+        bool send_conn_req();
+        bool send_disconnect_ack();
 
-		void emit_send(const packet& p, bool reliable);
-		void emit_send_error(protocol_error code);
-        void emit_send_disconnect_req(disconnect_type type, disconnect_reason reason);
-        void emit_send_disconnect_ack();
+        bool call_disconnect_ack();
+        bool call_disconnect_req(disconnect_type type, const disconnect_reason& reason);
+        bool call_connection_accepted(bool need_file_sync);
+        bool call_connection_rejected(const reject_reason& reason);
 
-        void emit_disconnected(disconnect_type type, disconnect_reason reason);
-        
-        void emit_conn_req();
-		void emit_connection_accepted(bool need_file_sync);
-		void emit_connection_rejected(reject_reason reason);
-
-        bool on_recv_error                  	(const packet& p);
-		bool on_recv_connecting					(const packet& p);
-			bool recv_conn_accept				(const packet& p);
-			bool recv_conn_reject				(const packet& p);
-		bool on_recv_loading					(const packet& p);
-			bool on_loading_file_sync			(const packet& p);
-			bool on_loading_level_info			(const packet& p);
-			bool on_loading_snapshot_sync		(const packet& p);
-		bool on_recv_active						(const packet& p);
-		    bool on_recv_active_disconnect_req	(const packet& p);
-		    bool on_recv_active_sv_status_ack	(const packet& p);
-		    bool on_recv_active_sv_snapshot		(const packet& p);
-        bool on_recv_disconnecting				(const packet& p);
+		bool on_recv_connecting                 ();
+			bool process_conn_accept            ();
+			bool process_conn_reject            ();
+		bool on_recv_loading                    ();
+			bool on_loading_file_sync           ();
+			bool on_loading_level_info          ();
+			bool on_loading_snapshot_sync       ();
+		bool on_recv_active                     ();
+		    bool on_recv_active_sv_status_ack   ();
+		    bool on_recv_active_sv_snapshot     ();
+        bool on_recv_disconnecting              ();
 	};
 }
 ```
@@ -1205,298 +984,281 @@ common/formats/protocol/cl/cl_snapshot_sync.cpp
 ```
 ```
 
-common/formats/protocol/packets.cpp
+common/formats/protocol/packets/packets.cpp
 ```
+
 #include "packets.h"
-#include "../../platform/endian/endian.h"
-#include "protocol.h"
+
 #include <cstring>
 #include <type_traits>
 
 namespace tungsten::protocol
-{    
-    namespace 
+{
+
+    bool make_packet_header(packet_header& out, uint64_t timestamp_us, packet_type type, uint8_t flags, uint64_t receiver_nonce)
     {
-        // Import raw endian transformation primitives
-        using util::endian::to_big;
-        using util::endian::to_little;
-
-        using util::endian::swap;
-
-        // --- Compile-Time Type Mapping Registry (Traits) ---
-        template<packet_type T> struct packet_mapping;
-
-        struct empty_payload {};
-
-        // Explicit registry definition mapping identifiers directly to types
-        #define REGISTER_PACKET(type_enum, struct_name) \
-            template<> struct packet_mapping<type_enum> { using type = struct_name; };
-
-        REGISTER_PACKET(packet_type::protocol_error, packet_error)
-        REGISTER_PACKET(packet_type::conn_req,       packet_conn_req)
-        REGISTER_PACKET(packet_type::conn_accept,    packet_conn_accept)
-        REGISTER_PACKET(packet_type::conn_reject,    packet_conn_reject)
-        REGISTER_PACKET(packet_type::conn_cancel,    empty_payload)
-        REGISTER_PACKET(packet_type::disconnect_req, packet_disconnect_req)
-        REGISTER_PACKET(packet_type::disconnect_ack, empty_payload)
-
-        #undef REGISTER_PACKET
-
-        // --- Payload Swap Overloads ---
-
-        // Generic fallback route for types that do not have fields needing manual inversion
-        template<typename T>
-        constexpr void swap_payload(T& data) noexcept {}
-
-        // Specific overrides targeting underlying structures packed across the wire
-        void swap_payload(packet_conn_req& data) 
-        {
-            data.client_nonce = swap(data.client_nonce);
-        }
-
-        void swap_payload(packet_conn_accept& data) 
-        {
-            data.server_nonce = swap(data.server_nonce);
-        }
-
-
-        void swap_payload(packet_disconnect_req& data) 
-        {
-            using   type_underlying = std::underlying_type_t<disconnect_type>;
-            
-            *reinterpret_cast<type_underlying*>(&data.type) = swap(*reinterpret_cast<type_underlying*>(&data.type));
-            swap_protocol_string(data.reason);
-        }
-
-        // --- Header Swapping Core Routine ---
-
-        void packet_header_swap(packet_header& protocol)
-        {
-            protocol.timestamp_us     = to_big(protocol.timestamp_us);
-            protocol.protocol_version = to_big(protocol.protocol_version);
-            protocol.receiver_nonce   = to_big(protocol.receiver_nonce);
-            protocol.header_size      = to_big(protocol.header_size);
-            protocol.payload_size     = to_big(protocol.payload_size);
-            protocol.checksum         = to_big(protocol.checksum);
-        }
-
-        // --- Automated Extraction Mechanics ---
-
-        template<packet_type Type>
-        bool process_typed_packet(packet& p, bool swap_bytes)
-        {
-            using payload_type = typename packet_mapping<Type>::type;
-            
-            // Derive static expected runtime layout constraints
-            constexpr uint16_t expected_payload_size = std::is_same_v<payload_type, empty_payload> ? 0 : sizeof(payload_type);
-            if (p.header.payload_size != expected_payload_size)
-                return false;
-
-            if constexpr (!std::is_same_v<payload_type, empty_payload>)
-            {
-                if (swap_bytes)
-                {
-                    auto* payload_ptr = reinterpret_cast<payload_type*>(p.payload);
-                    swap_payload(*payload_ptr); 
-                }
-            }
-            return true;
-        }
-
-        bool check_packet(int expected_size, packet& p, bool swap_bytes)
-        {
-            if (swap_bytes)
-            {
-                packet_header_swap(p.header);
-            }
-
-            if (!validate_magic(p.header) || !validate_packet_sizes(expected_size, p.header))
-                return false;
-
-            if (!validate_checksum(p))
-                return false;
-
-            switch (p.header.type) 
-            {
-                case packet_type::protocol_error : return process_typed_packet<packet_type::protocol_error>(p, swap_bytes);
-                case packet_type::conn_req       : return process_typed_packet<packet_type::conn_req      >(p, swap_bytes);
-                case packet_type::conn_accept    : return process_typed_packet<packet_type::conn_accept   >(p, swap_bytes);
-                case packet_type::conn_reject    : return process_typed_packet<packet_type::conn_reject   >(p, swap_bytes);
-                case packet_type::conn_cancel    : return process_typed_packet<packet_type::conn_cancel   >(p, swap_bytes);
-                case packet_type::disconnect_req : return process_typed_packet<packet_type::disconnect_req>(p, swap_bytes);
-                case packet_type::disconnect_ack : return process_typed_packet<packet_type::disconnect_ack>(p, swap_bytes);
-                
-                // Block compilation pathways for stages missing definition structures
-                case packet_type::none           :
-                case packet_type::sv_levelstate  :
-                case packet_type::sv_snapshot    :
-                case packet_type::cl_snapshot_ack:
-                case packet_type::cl_ready       :
-                case packet_type::cl_status_req  :
-                case packet_type::sv_status_ack  :
-                case packet_type::cl_usercmd     :
-                case packet_type::sv_usercmd_ack :
-                case packet_type::transfer       :
-                default:
-                    break;
-            }
-            return false;
-        }
-    }
-    
-    // --- Public API Implementations ---
-
-    bool make_packet(packet& out, uint64_t timestamp_us, packet_type type, uint8_t flags, uint64_t receiver_nonce, uint16_t payload_size, const void* payload) 
-    {
-        if (payload_size > MAX_PACKET_PAYLOAD_SIZE) 
-            return false;
-
         memset(&out, 0, sizeof(out));
-        packet_header& header = out.header;
+        memcpy(out.magic, MAGIC, MAGIC_SIZE);
 
-        header.timestamp_us     = timestamp_us;
-        header.type             = type;
-        header.flags            = flags;
-        header.protocol_version = VERSION;
-        header.header_size      = static_cast<uint16_t>(PACKET_HEADER_SIZE);
-        header.receiver_nonce   = receiver_nonce;
-        header.payload_size     = payload_size;
+        out.timestamp_us        = timestamp_us;
+        out.type                = type;
+        out.flags               = flags;
+        out.protocol_version    = VERSION;
+        out.header_size         = static_cast<uint16_t>(PACKET_HEADER_SIZE);
+        out.receiver_nonce      = receiver_nonce;
 
-        memcpy(header.magic, MAGIC, MAGIC_SIZE);
-
-        if (payload_size && payload)
-        {
-            memcpy(out.payload, payload, payload_size);
-        }
-
-        make_checksum(out);
         return true;
     }
 
-    bool validate_protocol_version(const packet_header& header) 
-    { 
-        return header.protocol_version == VERSION; 
-    }
-
-    bool validate_packet_sizes(int expected_size, const packet_header& header) 
-    { 
-        return header.header_size  == PACKET_HEADER_SIZE && 
-               header.payload_size <= MAX_PACKET_PAYLOAD_SIZE && 
-              (header.payload_size + header.header_size == expected_size); 
-    }
-
-    bool validate_magic(const packet_header& header) 
-    { 
-        return !std::memcmp(header.magic, MAGIC, MAGIC_SIZE); 
-    }
-
-    bool validate_nonce(const packet_header& header, uint64_t nonce) 
-    { 
-        return header.receiver_nonce == nonce; 
-    }
-
-    bool validate_checksum(const packet& p) 
+    bool make_packet_payload(packet_header& header, uint16_t payload_size, const void* payload)
     {
-        // TODO: Integration hook for CRC32 / Adler32 processing loops
-        return true; 
-    }
+        // TODO: need to do checksum funcs
 
-    bool make_checksum(packet& p) 
-    { 
-        // TODO: Complete field aggregation mapping to p.header.checksum
-        p.header.checksum = 0;
-        return true; 
-    }
-
-    bool parse_to_native_packet(int expected_size, packet& protocol_packet)
-    {
-        return check_packet(expected_size, protocol_packet, true);
-    }
-
-    bool parse_to_protocol_packet(int expected_size, packet& native_packet)
-    {
-        return check_packet(expected_size, native_packet, true);
-    }
-
-    bool validate_all_packet(const packet& p, uint64_t nonce) 
-    {
-        return validate_protocol_version(p.header) && 
-               validate_nonce(p.header, nonce) && 
-               validate_checksum(p);
-    }
-
-    bool parse_packet(packet& out, int size, const void* data)
-    {
-        if (!data || size < static_cast<int>(PACKET_HEADER_SIZE) || size > static_cast<int>(MAX_PACKET_SIZE))
+        if (payload_size > MAX_PACKET_PAYLOAD_SIZE)
             return false;
 
-        std::memcpy(&out, data, size);
-        return parse_to_native_packet(size, out);
+        header.checksum = 0;
+        header.payload_size = payload_size;
+
+        return true;
     }
 
-    bool check_range(int total, int min, int max)
+    template <uint32_t N>
+    bool read_packet_struct(protocol_reader& reader, protocol_string<N>& str)
     {
-        return (total >= min) && total <= max;
+        if (!reader.read(str.size))
+            return false;
+
+        if (str.size > N)
+            return false;
+
+        return reader.read_bytes(str.size, str.data);
     }
 
-    // --- Codec & Crypto Stubs ---
-    bool compress(size_t src_size, const void* src, size_t& dst_size, void* dst) { return false; }
-    bool decompress(size_t src_size, const void* src, size_t& dst_size, void* dst) { return false; }
-    bool encrypt_packet(packet& p) { return false; }
-    bool decrypt_packet(packet& p) { return false; }
-    bool compress_packet(packet& p) { return false; }
-    bool decompress_packet(packet& p) { return false; }
-    bool validate_packet(uint64_t nonce, uint8_t flags, int size, const void* data) { return false; }
+    template <uint32_t N>
+    bool write_packet_struct(protocol_writer& writer, const protocol_string<N>& str)
+    {
+
+        if (str.size > N)
+            return false;
+
+        if (!writer.write(str.size))
+            return false;
+
+        return writer.write_bytes(str.size, str.data);
+    }
+
+    // packet_header
+    bool read_packet_struct(protocol_reader& reader, packet_header& header)
+    {
+        if (!reader.can_advance(sizeof(header)))
+            return false;
+
+        reader.read(header.timestamp_us);
+        reader.read_bytes(MAGIC_SIZE, header.magic);
+        reader.read(header.protocol_version);
+        reader.read(header.receiver_nonce);
+        reader.read(header.header_size);
+        reader.read(header.payload_size);
+        reader.read(*reinterpret_cast<uint8_t*>(&header.type));
+        reader.read(header.flags);
+        reader.read(header.checksum);
+
+        return true;
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_header& header)
+    {
+        if (!writer.can_advance(sizeof(header)))
+            return false;
+
+        writer.write(header.timestamp_us);
+        writer.write_bytes(MAGIC_SIZE, header.magic);
+        writer.write(header.protocol_version);
+        writer.write(header.receiver_nonce);
+        writer.write(header.header_size);
+        writer.write(header.payload_size);
+        writer.write(static_cast<uint8_t>(header.type));
+        writer.write(header.flags);
+        writer.write(header.checksum);
+
+        return true;
+    }
+
+    // packet_conn_req
+    bool read_packet_struct(protocol_reader& reader, packet_conn_req& conn_req)
+    {
+        return reader.read(conn_req.client_nonce);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_req& conn_req)
+    {
+        return writer.write(conn_req.client_nonce);
+    }
+
+    // packet_conn_reject
+    bool read_packet_struct(protocol_reader& reader, packet_conn_reject& conn_reject)
+    {
+        return read_packet_struct(reader, conn_reject.reason);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_reject& conn_reject)
+    {
+        return write_packet_struct(writer, conn_reject.reason);
+    }
+
+    // packet_conn_reject
+    bool read_packet_struct(protocol_reader& reader, packet_conn_accept& conn_accept)
+    {
+        if (!reader.read(conn_accept.server_nonce))
+            return false;
+        return reader.read(conn_accept.need_file_sync);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_accept& conn_accept)
+    {
+        if (!writer.write(conn_accept.server_nonce))
+            return false;
+        return writer.write(conn_accept.need_file_sync);
+    }
+
+
+    // packet_error
+    bool read_packet_struct(protocol_reader& reader, packet_error& error)
+    {
+        return reader.read(*reinterpret_cast<uint8_t*>(&error.code));
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_error& error)
+    {
+        return writer.write(static_cast<uint8_t>(error.code));
+    }
+
+    // packet_disconnect_req
+    bool read_packet_struct(protocol_reader& reader, packet_disconnect_req& disconnect_req)
+    {
+        if (!reader.read(*reinterpret_cast<uint8_t*>(&disconnect_req.type)))
+            return false;
+
+        return read_packet_struct(reader, disconnect_req.reason);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_disconnect_req& disconnect_req)
+    {
+        if (!writer.write(static_cast<uint8_t>(disconnect_req.type)))
+            return false;
+
+        return write_packet_struct(writer, disconnect_req.reason);
+    }
+
+    // packet_disconnect_ack
+    /*
+    template <>
+    bool read_packet_struct(protocol_reader& reader)
+    {
+        return true;
+    }
+    template <>
+    bool write_packet_struct(protocol_writer& writer)
+    {
+        return true;
+    }
+    */
+
+
+    bool validate_header(const packet_header& header, size_t payload_size, const void* payload)
+    {
+
+        if (header.payload_size > 0 && !payload)
+        {
+            return false;
+        }
+
+        if (memcmp(header.magic, MAGIC, MAGIC_SIZE) != 0
+            || header.header_size != PACKET_HEADER_SIZE
+            || header.payload_size > MAX_PACKET_PAYLOAD_SIZE
+            || header.payload_size > payload_size) // maybe != ?
+        {
+            return false;
+        }
+
+        return header.checksum == 0;
+    }
+
+
 }
 ```
 
-common/formats/protocol/packets.h
+common/formats/protocol/packets/packets.h
 ```
 #pragma once
 
 #include <cstdint>
 #include <cstddef>
 
-#include "protocol.h"
+#include "../protocol.h"
 
 namespace tungsten::protocol
 {
-#pragma pack(push, 1)
-
     // --- Protocol Constants ---
     constexpr char      MAGIC[] = "TUNGSTEN 1.0b";
     constexpr size_t    MAGIC_SIZE = sizeof(MAGIC) - 1;
-    constexpr uint16_t  VERSION = 1;
-    
+    constexpr uint16_t  VERSION = 0x0001;
+
+    // --- Generic Packet Structure ---
+
+    /*
+
+        TODO:
+            Need to determine layout:
+
+            - struct packet gurantee 1 alignment
+            - packet is alias to uint8_t[MAX_PACKET_SIZE]
+
+    */
+
+    // [packet_header][payload]
+    using packet_t = uint8_t[MAX_PACKET_SIZE];
+
+
     // --- Protocol Enums ---
-    enum class PACKET_FLAGS : uint8_t
+    enum PACKET_FLAGS : uint8_t
     {
-        PACKET_NONE_FLAG    =      0,
-        PACKET_ENCRYPTED    = 1 << 0,
-        PACKET_COMPRESSED   = 1 << 1,
-        PACKET_RELIABLE     = 1 << 2,
+        PACKET_NONE_FLAG = 0,
+        PACKET_ENCRYPTED = 1 << 0,
+        PACKET_COMPRESSED = 1 << 1,
+        //PACKET_RELIABLE     = 1 << 2,
     };
 
     enum class packet_type : uint8_t
     {
         none = 0,
+
+        transfer,
         protocol_error,
+
+        // connection stage
         conn_req,
-        conn_cancel,
+        // conn_cancel,
         conn_accept,
         conn_reject,
-		sv_levelstate,
-        sv_snapshot,
-        cl_snapshot_ack,
-        cl_ready,
+
+        // file_sync stage
+        // sv_file_manifest,
+        // cl_need_manifest,
+
+        // level_sync stage
+        // sv_levelstate,
+        // sv_snapshot,
+        // cl_snapshot_ack,
+        // cl_ready,
+        // cl_usercmd,
+        // sv_usercmd_ack,
+
         cl_status_req,
         sv_status_ack,
-        cl_usercmd,
-        sv_usercmd_ack,
         disconnect_req,
         disconnect_ack,
-        transfer,
+
+        // event_req,
+        // event_ack,
     };
+
+
 
     // --- Packet Network Header ---
     struct packet_header
@@ -1512,15 +1274,19 @@ namespace tungsten::protocol
         uint64_t    checksum;
     };
 
-    constexpr size_t PACKET_HEADER_SIZE       = sizeof(packet_header);    
-    constexpr size_t MAX_PACKET_PAYLOAD_SIZE  = MAX_PACKET_SIZE - PACKET_HEADER_SIZE;
+    constexpr size_t PACKET_HEADER_SIZE =
+          sizeof(packet_header::timestamp_us)
+        + sizeof(packet_header::magic)
+        + sizeof(packet_header::protocol_version)
+        + sizeof(packet_header::receiver_nonce)
+        + sizeof(packet_header::header_size)
+        + sizeof(packet_header::payload_size)
+        + sizeof(packet_header::type)
+        + sizeof(packet_header::flags)
+        + sizeof(packet_header::checksum);
 
-    // --- Generic Packet Structure ---
-    struct packet
-    {
-        packet_header   header;
-        uint8_t         payload[MAX_PACKET_PAYLOAD_SIZE];
-    };
+    constexpr size_t MAX_PACKET_PAYLOAD_SIZE = MAX_PACKET_SIZE - PACKET_HEADER_SIZE;
+
 
     // --- Concrete Packet Payloads ---
     struct packet_error
@@ -1540,7 +1306,7 @@ namespace tungsten::protocol
     };
 
     struct packet_conn_reject
-    {    
+    {
         reject_reason reason;
     };
 
@@ -1555,73 +1321,48 @@ namespace tungsten::protocol
         disconnect_reason   reason;
     };
 
-#pragma pack(pop)
 
     // --- Public API Functions ---
 
     // Factory method to build network packets safely
-    bool make_packet
-	(
-        packet&     out,
-        uint64_t    timestamp_us,
-        packet_type type,
-        uint8_t     flags,
-        uint64_t    receiver_nonce,
-        uint16_t    payload_size,
-        const void* payload
+
+    bool make_packet_header
+    (
+        packet_header& out,
+        uint64_t       timestamp_us,
+        packet_type    type,
+        uint8_t        flags,
+        uint64_t       receiver_nonce
     );
 
-    // Endianness converters (Implementations inside your endian.cpp)
-    uint16_t to_native16(uint16_t protocol);
-    uint32_t to_native32(uint32_t protocol);
-    uint64_t to_native64(uint64_t protocol);
-    
-    uint16_t to_protocol16(uint16_t native);
-    uint32_t to_protocol32(uint32_t native);
-    uint64_t to_protocol64(uint64_t native);
+    bool make_packet_payload(packet_header& header, uint16_t payload_size, const void* payload);
 
-    
-    template <uint32_t N>
-    void swap_protocol_string(protocol_string<N>& str) 
-    {
-        str.size = swap(str.size);
-    }
+    // packet_header
+    bool read_packet_struct(protocol_reader& reader, packet_header& header);
+    bool write_packet_struct(protocol_writer& writer, const packet_header& header);
 
-    // Context-dependent structural transformation parsers
-    bool parse_to_native_packet  (int expected_size, packet& protocol_packet);
-    bool parse_to_protocol_packet(int expected_size, packet&   native_packet);
+    // packet_conn_req
+    bool read_packet_struct(protocol_reader& reader, packet_conn_req& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_req& value);
 
-    // Buffer-level compression codecs
-    bool   compress(size_t src_size, const void* src, size_t& dst_size, void* dst);
-    bool decompress(size_t src_size, const void* src, size_t& dst_size, void* dst);
-    
-    // Core protocol validation mechanisms
-    bool validate_protocol_version(const packet_header& header);
-    bool validate_magic           (const packet_header& header);
-    bool validate_packet_sizes    (int expected_size, const packet_header& header);
-    bool validate_nonce           (const packet_header& header, uint64_t nonce);
-    bool validate_checksum        (const packet& p);
+    // packet_conn_accept
+    bool read_packet_struct(protocol_reader& reader, packet_conn_accept& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_accept& value);
 
-    // Top-level raw parsing and composite state validation
-    bool validate_packet(uint64_t nonce, uint8_t flags, int size, const void* data);
-    bool validate_all_packet(const packet& p, uint64_t nonce);
-    
-    // Packet mutation processing states
-    bool make_checksum(packet& p);
-    bool encrypt_packet(packet& p);
-    bool decrypt_packet(packet& p);
-    bool compress_packet(packet& p);
-    bool decompress_packet(packet& p);
+    // packet_conn_reject
+    bool read_packet_struct(protocol_reader& reader, packet_conn_reject& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_conn_reject& value);
 
-    bool parse_packet(packet& out, int size, const void* data);
-    bool check_range(int total, int min, int max);
-    
-    // Strict design assertions to match layout boundaries
-    static_assert(sizeof(packet) <= MAX_PACKET_SIZE, "sizeof(packet) > MAX_PACKET_SIZE");
-    static_assert(sizeof(packet_conn_req) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_req) > MAX_PACKET_PAYLOAD_SIZE");
-    static_assert(sizeof(packet_conn_accept) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_accept) > MAX_PACKET_PAYLOAD_SIZE");
-    static_assert(sizeof(packet_conn_reject) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_reject) > MAX_PACKET_PAYLOAD_SIZE");
-    static_assert(sizeof(packet_conn_cancel) <= MAX_PACKET_PAYLOAD_SIZE, "sizeof(packet_conn_cancel) > MAX_PACKET_PAYLOAD_SIZE");
+    // packet_error
+    bool read_packet_struct(protocol_reader& reader, packet_error& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_error& value);
+
+    // packet_disconnect_req
+    bool read_packet_struct(protocol_reader& reader, packet_disconnect_req& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_disconnect_req& value);
+
+    // base validate
+    bool validate_header(const packet_header& header, size_t payload_size, const void* payload);
 }
 ```
 
@@ -1631,13 +1372,17 @@ common/formats/protocol/protocol.h
 
 #include <cstdint>
 #include "container/static_span.h"
+#include "../../utils/binary/binary.h"
 
-namespace tungsten::protocol 
+namespace tungsten::protocol
 {
-	constexpr size_t MAX_PACKET_SIZE 			= 1200;
-	
-#pragma push(pack, 1)
+	constexpr size_t	MAX_PACKET_SIZE = 1024;
+	constexpr uint64_t	NO_NONCE		= UINT64_MAX;
+
+
+
 	// Fixed string with explicit size. It does not require null termination.
+
 	template <uint32_t N>
 	struct protocol_string
 	{
@@ -1645,13 +1390,11 @@ namespace tungsten::protocol
 		char 		data[N];
 	};
 
-    struct packet;
-	enum class packet_type : uint8_t;
-    using data_span = util::container::static_span<void>;
+	using data_span  = util::container::static_span<const void>;
 
 	/*
 		TODO:
-			need to abstract the entire contents of the packages 
+			need to abstract the entire contents of the packages
 			so that interaction via interfaces occurs solely through pointers—that is,
 			raw byte arrays.
 	*/
@@ -1659,9 +1402,7 @@ namespace tungsten::protocol
 	enum class protocol_error : uint8_t
 	{
 		none = 0,
-		
-		//timeout,
-		
+
 		corrupted_packet,
 		unexcepted_packet,
 		unknown_packet,
@@ -1675,18 +1416,20 @@ namespace tungsten::protocol
 	constexpr size_t MAX_DISCONNECT_REASON_SIZE = 512;
 	using disconnect_reason = protocol_string<MAX_DISCONNECT_REASON_SIZE>;
 
-    enum class disconnect_type : uint8_t
-    {
-        none = 0,
+	enum class disconnect_type : uint8_t
+	{
+		none = 0,
 
-        kicked,
-        banned,
-        shutting_down,
+		kicked,
+		banned,
+		shutting_down,
 		closed,
 
 		other,
-    };
-#pragma pop()
+	};
+
+	using protocol_reader = util::binary::binary_reader<util::binary::bin_endian_type::big>;
+	using protocol_writer = util::binary::binary_writer<util::binary::bin_endian_type::big>;
 }
 
 ```
@@ -1713,6 +1456,19 @@ namespace tungsten::protocol
         All connection requests must be processed by the server itself, 
         and only after acceptance, open it.
     */
+
+
+    server_client_fsm::server_client_fsm(
+        void* ctx,
+        timeout_config cfg,
+        base_fsm_callbacks cmn_callbacks,
+        server_callbacks sv_callbacks
+    ) 
+        : base_fsm{ ctx, cfg, cmn_callbacks }
+        , sv_callbacks{sv_callbacks}
+    {
+        pure_reset();
+    }
 
     bool server_client_fsm::on_recv_connecting(const packet& p)
     {
@@ -1753,19 +1509,19 @@ namespace tungsten::protocol
         return false;
     }
 
-    bool server_client_fsm::on_recv_custom(const packet& p)
+    bool server_client_fsm::on_recv_custom()
     {
         using enum server_main_stage;
         switch(main_stage)
         {
         case connecting:
-            return on_recv_connecting(p);
+            return on_recv_connecting();
         case loading:
-            return on_recv_loading(p);
+            return on_recv_loading();
         case active:
-            return on_recv_active(p);
+            return on_recv_active();
         case disconnecting:
-            return on_recv_disconnecting(p);
+            return on_recv_disconnecting();
         default:
             error(fsm_error{
                 .type = fsm_error_type::unknown_stage, 
@@ -1792,12 +1548,12 @@ namespace tungsten::protocol
             All substages of the loading stage need to be implemented.
     */
     
-	bool server_client_fsm::on_recv_loading_file_sync(const packet& p)
+	bool server_client_fsm::on_recv_loading_file_sync()
     {
         return false;
     }
 
-	bool server_client_fsm::on_recv_loading_level_sync(const packet& p)
+	bool server_client_fsm::on_recv_loading_level_sync()
     {
         return false;
     }
@@ -1807,23 +1563,23 @@ namespace tungsten::protocol
             Need to find a way to make `snapshot_sync` usable during the active stage as well.
     */
 
-	bool server_client_fsm::on_recv_loading_snapshot_sync(const packet& p)
+	bool server_client_fsm::on_recv_loading_snapshot_sync()
     {
         return false;
     }
 
     
-	bool server_client_fsm::on_recv_loading(const packet& p)
+	bool server_client_fsm::on_recv_loading()
     {
         using enum server_loading_stage;
         switch (loading_stage) 
         {
 		case file_sync:
-            return on_recv_loading_file_sync(p);
+            return on_recv_loading_file_sync();
 		case level_sync:
-            return on_recv_loading_level_sync(p); 
+            return on_recv_loading_level_sync(); 
 		case snapshot_sync:
-            return on_recv_loading_snapshot_sync(p);
+            return on_recv_loading_snapshot_sync();
         default:
             break;
         }
@@ -1835,24 +1591,23 @@ namespace tungsten::protocol
             need to implement the processing of status_req and usercmd packets.
     */
 
-	bool server_client_fsm::on_recv_active_cl_status_req(const packet& p)
+	bool server_client_fsm::on_recv_active_cl_status_req()
     {
         return false;
     }
 
-    bool server_client_fsm::on_recv_active_cl_usercmd(const packet& p)
+    bool server_client_fsm::on_recv_active_cl_usercmd()
     {
         return false;
     }
 
-	bool server_client_fsm::on_recv_active(const packet& p)
+	bool server_client_fsm::on_recv_active()
     {
         using enum packet_type;
         switch (p.header.type) 
         {
-        //case disconnect_req:    return on_recv_active_disconnect_req(p);  
-        //case cl_status_req:     return on_recv_active_cl_status_req (p);
-        //case cl_usercmd:        return on_recv_active_cl_usercmd    (p);
+        //case cl_status_req:     return on_recv_active_cl_status_req();
+        //case cl_usercmd:        return on_recv_active_cl_usercmd();
         default:
             error(fsm_error{fsm_error_type::unexpected_packet, protocol_error::unexcepted_packet}, true);
             break;
@@ -1869,7 +1624,7 @@ namespace tungsten::protocol
             .need_file_sync = need_file_sync
         };
 
-        if (!make_packet_internal(
+        if (!make_packet_header_internal(
             p,
             packet_type::conn_accept,
             0, 
@@ -1992,7 +1747,7 @@ namespace tungsten::protocol
     bool server_client_fsm::send_disconnect_ack()
     {
         packet p;
-        if (!make_packet_internal(p, packet_type::disconnect_ack, 0, 0, nullptr))
+        if (!make_packet_header_internal(p, packet_type::disconnect_ack, 0, 0, nullptr))
             return false;
 
         return send(p);
@@ -2022,7 +1777,7 @@ namespace tungsten::protocol
             .reason = reason
         };
 
-        if (!make_packet_internal(p, packet_type::disconnect_req, 0, sizeof(req), &req))
+        if (!make_packet_header_internal(p, packet_type::disconnect_req, 0, sizeof(req), &req))
             return false;
 
         return send(p);
@@ -2066,7 +1821,7 @@ common/formats/protocol/sv/sv.h
 
 #pragma once
 
-#include "../base_fsm.h"
+#include "../base_fsm/base_fsm.h"
 #include "protocol/protocol.h"
 
 namespace tungsten::protocol 
@@ -2168,21 +1923,21 @@ namespace tungsten::protocol
         none = 0,
     };
 
-	class server_client_fsm : public base_fsm
+
+    //typedef bool (*on_status_req_func)(void);
+    //typedef void (*on_usercmd_func)(void);
+
+    struct server_callbacks
+    {
+        //on_status_req_func on_status_req = nullptr;
+    };
+
+
+    class server_client_fsm final : public base_fsm
 	{
 	public:
 
-
-        //typedef bool (*on_status_req_func)(void);
-        //typedef void (*on_usercmd_func)(void);
-
-        struct server_callbacks
-        {
-            //on_status_req_func on_status_req = nullptr;
-        };
-
-
-        using base_fsm::base_fsm;
+        server_client_fsm(void* ctx = nullptr, timeout_config cfg = {}, base_fsm_callbacks cmn_callbacks = {}, server_callbacks sv_callbacks = {});
 
         void set_server_callbacks(server_callbacks callbacks);
 
@@ -2207,20 +1962,20 @@ namespace tungsten::protocol
         // overrides
         void on_reset() override;
         void on_tick()  override;
-        bool on_recv_custom(const packet& p) override;
+        bool on_recv_custom() override;
         bool on_disconnect_req(disconnect_type type, const disconnect_reason& reason) override;
         bool on_disconnect_ack() override;
 
         // on_recv_* funcs
-        bool on_recv_connecting             (const packet& p);
-		bool on_recv_loading                (const packet& p);
-		bool on_recv_loading_file_sync      (const packet& p);
-		bool on_recv_loading_level_sync     (const packet& p);
-		bool on_recv_loading_snapshot_sync  (const packet& p);
-		bool on_recv_active                 (const packet& p);
-        bool on_recv_active_cl_status_req   (const packet& p);
-		bool on_recv_active_cl_usercmd      (const packet& p);
-        bool on_recv_disconnecting          (const packet& p);
+        bool on_recv_connecting();
+		bool on_recv_loading();
+		    bool on_recv_loading_file_sync();
+		    bool on_recv_loading_level_sync();
+		    bool on_recv_loading_snapshot_sync();
+		bool on_recv_active();
+            bool on_recv_active_cl_status_req();
+		    bool on_recv_active_cl_usercmd();
+        bool on_recv_disconnecting();
 
         server_callbacks sv_callbacks{};
 
@@ -3488,7 +3243,7 @@ namespace tungsten::transfer
 }
 ```
 
-common/formats/tbsp/bspfile.cpp
+common/formats/tbsp/tbspfile.cpp
 ```
 //
 // Created by UBER_USER on 22.12.2025.
@@ -3657,16 +3412,14 @@ void BSPMap::clear()
 #endif
 ```
 
-common/formats/tbsp/bspfile.h
+common/formats/tbsp/tbspfile.h
 ```
 //
 // Created by UBER_USER on 22.12.2025.
 //
 
 /*
-
-	common format for .tbsp files in TUNGSTEN
-
+	common .tbsp format in TUNGSTEN
 */
 
 #pragma once
@@ -3675,9 +3428,10 @@ common/formats/tbsp/bspfile.h
 #define TUNGSTEN_ENGINE
 
 // is this need?
+// typedef uint8_t byte
+// I don't like using `byte`, it looks crude 
 
-// I don't like using byte, it looks crude 
-
+// need to replace by constexpr vars, but depricated tbsp (modified qbsp) shares this
 #define PLANENUM_LEAF               -1
 #define MAX_MAP_HULLS                4
 #define MAX_MAP_MODELS             256
@@ -3700,10 +3454,18 @@ common/formats/tbsp/bspfile.h
 #define	MAX_MAP_HEARING	  	  0x800000
 
 // need to fix
+
+// i don's actual version, it's like magic - only for integrity check
+
 #define BSPVERSION            	   144
+
+
+
+// Maybe it's property of .tmap format? need to specify.
 
 // TODO:
 // constexpr size_t MAX_MAP_SIZE = 
+
 
 enum LUMP_THINGS
 {
@@ -3725,6 +3487,9 @@ enum LUMP_THINGS
 
 	HEADER_LUMPS
 };
+
+// this is a bad way to handle serialization. 
+// it is better to use `binary_reader` from `util::binary`.
 
 #pragma pack(push, 1)
 
@@ -3869,6 +3634,7 @@ typedef struct dlightlump_s
 
 
 #ifdef TUNGSTEN_ENGINE
+
 // depricated, need to replace
 
 // never use heap allocation in tungsten
@@ -3910,7 +3676,7 @@ struct BSPVisibility // PVS
 // };
 
 
-
+// is this struct? Should it be as class ?
 struct BSPMap
 {
 	std::vector<dvec3_t>             vertexes{};
@@ -3968,7 +3734,6 @@ common/formats/twad/twad.h
 
 namespace tungsten::twad
 {
-#pragma pack(push, 1)
 
     constexpr char      MAGIC[]     = "TUNGSTEN TWAD";
     constexpr size_t    MAGIC_SIZE  = sizeof(MAGIC) - 1;
@@ -4022,7 +3787,7 @@ namespace tungsten::twad
 
     enum class twad_material_lump_type : uint8_t
     {
-        materials = 0,
+        sequences = 0,
         frames,
         textures,
         normalsmaps,
@@ -4069,8 +3834,6 @@ namespace tungsten::twad
         uint16_t            height;
         uint8_t             data[]; // [width*height*bpf], bfp - bytes per format
     };
-
-#pragma pack(pop)
 }
 ```
 
@@ -4081,7 +3844,7 @@ common/platform/endian/endian.h
 #include <cstdint>
 #include <concepts>
 
-namespace tungsten::util::endian 
+namespace tungsten::platform::endian 
 {
     // --- Target Architecture Configuration ---
     // Toggle these macros depending on your target machine architecture
@@ -4155,6 +3918,43 @@ namespace tungsten::util::endian
         return value;
     #endif
     }
+}
+```
+
+common/platform/memory/memory.cpp
+```
+
+#include "memory.h"
+#include <cstring>
+
+namespace tungsten::platform::memory
+{
+	void* memset(void* dst, int val, size_t size)
+	{
+		return std::memset(dst, val, size);
+	}
+	void* memcpy(void* dst, const void* src, size_t size)
+	{
+		return std::memcpy(dst, src, size);
+	}
+	int memcmp(const void* buf1, const void* buf2, size_t size)
+	{
+		return std::memcmp(buf1, buf2, size);
+	}
+}
+```
+
+common/platform/memory/memory.h
+```
+
+
+#pragma once
+
+namespace tungsten::platform::memory
+{
+	void* memset(      void* dst , int         val , size_t size);
+	void* memcpy(      void* dst , const void* src , size_t size);
+	int   memcmp(const void* buf1, const void* buf2, size_t size);
 }
 ```
 
@@ -4487,8 +4287,315 @@ namespace tungsten::util::allocator
 }
 ```
 
+common/utils/binary/binary.cpp
+```
+
+
+#include "binary.h"
+
+#include "../../platform/memory/memory.h"
+
+namespace tungsten::util::binary
+{
+
+
+	binary_cursor::binary_cursor(size_t size)
+		: size{ size }
+		, cursor{ 0 }
+	{};
+
+
+	void binary_cursor::advance(size_t count)
+	{
+		cursor += count;
+	}
+
+	size_t binary_cursor::tell() const
+	{
+		return cursor;
+	}
+
+	size_t binary_cursor::total_size() const
+	{
+		return size;
+	}
+
+	size_t binary_cursor::remaining() const
+	{
+		return total_size() - tell();
+	}
+
+	bool binary_cursor::eof() const
+	{
+		return remaining() == 0;
+	}
+
+	bool binary_cursor::seek(size_t offset)
+	{
+		if (offset > total_size())
+			return false;
+
+		cursor = offset;
+		return true;
+	}
+
+	bool binary_cursor::can_advance(size_t count) const
+	{
+		return (remaining() >= count);
+	}
+
+	bool binary_cursor::skip(size_t count)
+	{
+		if (!can_advance(count))
+			return false;
+
+		advance(count);
+		return true;
+	}
+
+	void binary_cursor::reset_cursor()
+	{
+		cursor = 0;
+	}
+
+
+	// ------ //
+	// Reader //
+	// ------ //
+
+	binary_reader_base::binary_reader_base()
+		: binary_reader_base{ 0, nullptr }
+	{}
+
+	binary_reader_base::binary_reader_base(size_t size, const void* data)
+		: binary_cursor{ size }
+		, data{ data }
+	{}
+
+	bool binary_reader_base::read_bytes(size_t count, void* dst)
+	{
+		if (!dst || !data)
+			return false;
+
+		if (!can_advance(count))
+			return false;
+
+		auto* src = reinterpret_cast<const uint8_t*>(data) + tell();
+		platform::memory::memcpy(dst, src, count);
+
+		advance(count);
+		return true;
+	}
+
+	bool binary_reader_base::peek_bytes(size_t count, void* dst) const
+	{
+		if (!dst || !data)
+			return false;
+
+		if (!can_advance(count))
+			return false;
+
+		auto* src = reinterpret_cast<const uint8_t*>(data) + tell();
+		platform::memory::memcpy(dst, src, count);
+		return true;
+	}
+
+
+	const void* binary_reader_base::peak() const
+	{
+		return reinterpret_cast<const uint8_t*>(data) + tell();
+	}
+
+	const void* binary_reader_base::data_ptr() const
+	{
+		return data;
+	}
+
+
+	// ------ //
+	// Writer //
+	// ------ //
+
+
+	binary_writer_base::binary_writer_base()
+		: binary_writer_base{ 0, nullptr }
+	{
+
+	}
+	binary_writer_base::binary_writer_base(size_t size, void* data)
+		: binary_cursor{ size }
+		, data{ data }
+	{}
+
+	bool binary_writer_base::write_bytes(size_t count, const void* src)
+	{
+		if (!src || !data)
+			return false;
+
+		if (!can_advance(count))
+			return false;
+
+		auto* dst = reinterpret_cast<uint8_t*>(data) + tell();
+		platform::memory::memcpy(dst, src, count);
+
+		advance(count);
+		return true;
+	}
+
+}
+```
+
+common/utils/binary/binary.h
+```
+
+
+#pragma once
+#include "../../platform/endian/endian.h"
+
+namespace tungsten::util::binary
+{
+
+
+	enum class bin_endian_type
+	{
+		big,
+		little,
+		native
+	};
+
+	template <bin_endian_type type, typename T>
+	T bin_convert(T value)
+	{
+		if constexpr (type == bin_endian_type::big)
+		{
+			return platform::endian::to_big(value);
+		}
+		else if constexpr (type == bin_endian_type::little)
+		{
+			return platform::endian::to_little(value);
+		}
+		else
+		{
+			return value;
+		}
+	}
+
+	// implemantation
+
+	class binary_cursor
+	{
+	public:
+		binary_cursor(size_t size);
+		~binary_cursor() = default;
+
+		size_t tell() const;
+		size_t total_size() const;
+		size_t remaining() const;
+		bool eof() const;
+
+		bool seek(size_t offset);
+		bool skip(size_t count);
+
+		bool can_advance(size_t count) const;
+		void reset_cursor();
+
+	protected:
+
+		void advance(size_t count);
+
+	private:
+		size_t cursor = 0;
+		size_t size = 0;
+	};
+
+	class binary_reader_base : public binary_cursor
+	{
+	public:
+		binary_reader_base();
+		binary_reader_base(size_t size, const void* data);
+
+
+		bool read_bytes(size_t count, void* dst);
+		bool peek_bytes(size_t count, void* dst) const;
+		
+		const void* peak() const;
+		const void* data_ptr() const;
+
+	private:
+		const void* data = nullptr;
+	};
+
+	template <bin_endian_type type>
+	class binary_reader final : public binary_reader_base
+	{
+	public:
+
+		using binary_reader_base::binary_reader_base;
+
+		template <typename T>
+		bool read(T& value)
+		{
+			constexpr size_t size = sizeof(T);
+
+			if (!read_bytes(size, &value))
+				return false;
+
+			value = bin_convert<type>(value);
+			return true;
+		}
+	private:
+
+	};
+
+	class binary_writer_base : public binary_cursor
+	{
+	public:
+
+		binary_writer_base();
+		binary_writer_base(size_t size, void* data);
+
+		bool write_bytes(size_t count, const void* src);
+
+
+	private:
+		void* data = nullptr;
+	};
+
+	template <bin_endian_type type>
+	class binary_writer final : public binary_writer_base
+	{
+	public:
+
+		using binary_writer_base::binary_writer_base;
+
+		template <typename T>
+		bool write(const T& value)
+		{
+			constexpr size_t size = sizeof(T);
+			T protocol_value = bin_convert<type>(value);
+			return write_bytes(size, &protocol_value);
+		}
+	};
+}
+```
+
 common/utils/compress/compress.cpp
 ```
+
+#include "compress.h"
+
+namespace tungsten::util::compress
+{
+    int   compress(size_t size, const void* src, void* dst)
+    {
+        return -1;
+    }
+
+    int decompress(size_t size, const void* src, void* dst)
+    {
+        return -1;
+    }
+}
 ```
 
 common/utils/compress/compress.h
@@ -5047,7 +5154,7 @@ common/utils/hash/hash.h
 
 namespace tungsten::util::hash 
 {
-
+	
 }
 ```
 
@@ -7100,7 +7207,7 @@ common/utils/string/fixed_string.h
 
 namespace tungsten::util::str 
 {
-    template <int N>
+    template <size_t N>
 	class fixed_string final
 	{
     public:
@@ -7185,7 +7292,7 @@ namespace tungsten::util::str
 
 
 
-    template <int N>
+    template <size_t N>
 	class fixed_wstring final
 	{
     public:
@@ -17076,7 +17183,7 @@ tengine/client/world/world.h
 #include <cstdint>
 #include <string>
 
-#include "bspfile/bspfile.h"
+#include "tbspfile/bspfile.h"
 
 
 namespace tungsten::world

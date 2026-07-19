@@ -174,14 +174,16 @@ namespace tungsten::protocol
 
     bool validate_header(const packet_header& header, size_t payload_size, const void* payload)
     {
+
         if (header.payload_size > 0 && !payload)
         {
             return false;
         }
+
         if (memcmp(header.magic, MAGIC, MAGIC_SIZE) != 0
             || header.header_size != PACKET_HEADER_SIZE
             || header.payload_size > MAX_PACKET_PAYLOAD_SIZE
-            || header.payload_size > payload_size)
+            || header.payload_size > payload_size) // maybe != ?
         {
             return false;
         }

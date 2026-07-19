@@ -193,9 +193,9 @@ function(tg_add_executable TARGET_NAME)
     endif()
 
     if(ARG_EXCLUDE_FROM_ALL)
-        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp")
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp" "src/common/formats/twad/tmaterial/tmaterial.h" "src/common/formats/twad/tmodel/tmodel.h" "src/common/formats/twad/tprog/tpog.h" "src/common/formats/twad/tsound/tsound.h")
     else()
-        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp")
+        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp" "src/common/formats/twad/tmaterial/tmaterial.h" "src/common/formats/twad/tmodel/tmodel.h" "src/common/formats/twad/tprog/tpog.h" "src/common/formats/twad/tsound/tsound.h")
     endif()
 
     tg_apply_common_settings(${TARGET_NAME})

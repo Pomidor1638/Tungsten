@@ -1,12 +1,8 @@
-
-
 #pragma once
 #include "../../platform/endian/endian.h"
 
 namespace tungsten::util::binary
 {
-
-
 	enum class bin_endian_type
 	{
 		big,
@@ -18,25 +14,17 @@ namespace tungsten::util::binary
 	T bin_convert(T value)
 	{
 		if constexpr (type == bin_endian_type::big)
-		{
 			return platform::endian::to_big(value);
-		}
 		else if constexpr (type == bin_endian_type::little)
-		{
 			return platform::endian::to_little(value);
-		}
 		else
-		{
 			return value;
-		}
 	}
-
-	// implemantation
 
 	class binary_cursor
 	{
 	public:
-		binary_cursor(size_t size);
+		explicit binary_cursor(size_t size);
 		~binary_cursor() = default;
 
 		size_t tell() const;
@@ -46,85 +34,160 @@ namespace tungsten::util::binary
 
 		bool seek(size_t offset);
 		bool skip(size_t count);
-
 		bool can_advance(size_t count) const;
 		void reset_cursor();
 
 	protected:
-
 		void advance(size_t count);
 
 	private:
-		size_t cursor = 0;
-		size_t size = 0;
+		size_t cursor_ = 0;
+		size_t size_ = 0;
 	};
 
-	class binary_reader_base : public binary_cursor
+	class binary_reader_base
 	{
 	public:
-		binary_reader_base();
-		binary_reader_base(size_t size, const void* data);
+		virtual ~binary_reader_base() = default;
 
+		virtual bool read_bytes(size_t count, void* dst) = 0;
+		virtual bool peek_bytes(size_t count, void* dst) const = 0;
 
-		bool read_bytes(size_t count, void* dst);
-		bool peek_bytes(size_t count, void* dst) const;
-		
-		const void* peak() const;
-		const void* data_ptr() const;
+		virtual size_t tell() const = 0;
+		virtual size_t total_size() const = 0;
+		virtual size_t remaining() const = 0;
+		virtual bool eof() const = 0;
 
-	private:
-		const void* data = nullptr;
+		virtual bool seek(size_t offset) = 0;
+		virtual bool skip(size_t count) = 0;
 	};
 
 	template <bin_endian_type type>
-	class binary_reader final : public binary_reader_base
+	class binary_reader : public binary_reader_base
 	{
 	public:
-
-		using binary_reader_base::binary_reader_base;
-
 		template <typename T>
 		bool read(T& value)
 		{
-			constexpr size_t size = sizeof(T);
-
-			if (!read_bytes(size, &value))
+			if (!read_bytes(sizeof(T), &value))
 				return false;
 
 			value = bin_convert<type>(value);
 			return true;
 		}
-	private:
-
 	};
 
-	class binary_writer_base : public binary_cursor
+	class binary_writer_base
 	{
 	public:
+		virtual ~binary_writer_base() = default;
 
-		binary_writer_base();
-		binary_writer_base(size_t size, void* data);
+		virtual bool write_bytes(size_t count, const void* src) = 0;
 
-		bool write_bytes(size_t count, const void* src);
+		virtual size_t tell() const = 0;
+		virtual size_t total_size() const = 0;
+		virtual size_t remaining() const = 0;
+		virtual bool eof() const = 0;
 
-
-	private:
-		void* data = nullptr;
+		virtual bool seek(size_t offset) = 0;
+		virtual bool skip(size_t count) = 0;
 	};
 
 	template <bin_endian_type type>
-	class binary_writer final : public binary_writer_base
+	class binary_writer : public binary_writer_base
 	{
 	public:
-
-		using binary_writer_base::binary_writer_base;
-
 		template <typename T>
 		bool write(const T& value)
 		{
-			constexpr size_t size = sizeof(T);
-			T protocol_value = bin_convert<type>(value);
-			return write_bytes(size, &protocol_value);
+			T converted = bin_convert<type>(value);
+			return write_bytes(sizeof(T), &converted);
 		}
+	};
+
+	template <bin_endian_type type>
+	class memory_reader final : public binary_reader<type>
+	{
+	public:
+		memory_reader(size_t size, const void* data)
+			: cursor{ size }, data{ data } {}
+
+		bool read_bytes(size_t count, void* dst) override
+		{
+			if (!dst || !data_ || !cursor_.can_advance(count))
+				return false;
+
+			auto* src = static_cast<const uint8_t*>(data_) + cursor_.tell();
+			platform::memory::memcpy(dst, src, count);
+
+			cursor_.advance(count);
+			return true;
+		}
+		bool peek_bytes(size_t count, void* dst) const override
+		{
+			if (!dst || !data_ || !cursor_.can_advance(count))
+				return false;
+
+			auto* src = static_cast<const uint8_t*>(data_) + cursor_.tell();
+			platform::memory::memcpy(dst, src, count);
+			return true;
+		}
+
+		size_t tell() const override { return cursor.tell(); }
+		size_t total_size() const override { return cursor.total_size(); }
+		size_t remaining() const override { return cursor.remaining(); }
+		bool eof() const override { return cursor.eof(); }
+		bool seek(size_t offset) override { return cursor.seek(offset); }
+		bool skip(size_t count) override { return cursor.skip(count); }
+
+		const void* peek() const
+		{
+			return static_cast<const uint8_t*>(data) + cursor.tell();
+		}
+
+		const void* data_ptr() const { return data; }
+
+	private:
+		binary_cursor cursor;
+		const void* data = nullptr;
+	};
+
+
+	template <bin_endian_type type>
+	class memory_writer final : public binary_writer<type>
+	{
+	public:
+		memory_writer(size_t size, void* data)
+			: cursor{ size }, data{ data } {}
+
+		bool write_bytes(size_t count, const void* src) override
+		{
+			if (!src || !data_ || !cursor_.can_advance(count))
+				return false;
+
+			auto* dst = static_cast<uint8_t*>(data_) + cursor_.tell();
+			platform::memory::memcpy(dst, src, count);
+
+			cursor_.advance(count);
+			return true;
+		}
+
+		size_t tell() const override { return cursor.tell(); }
+		size_t total_size() const override { return cursor.total_size(); }
+		size_t remaining() const override { return cursor.remaining(); }
+		bool eof() const override { return cursor.eof(); }
+		bool seek(size_t offset) override { return cursor.seek(offset); }
+		bool skip(size_t count) override { return cursor.skip(count); }
+
+		void* peek()
+		{
+			return static_cast<uint8_t*>(data) + cursor.tell();
+		}
+
+		void* data_ptr() { return data; }
+
+	private:
+		binary_cursor cursor;
+		void* data = nullptr;
 	};
 }

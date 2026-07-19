@@ -260,7 +260,7 @@ struct BSPVisibility // PVS
 // };
 
 
-
+// is this struct? Should it be as class ?
 struct BSPMap
 {
 	std::vector<dvec3_t>             vertexes{};
