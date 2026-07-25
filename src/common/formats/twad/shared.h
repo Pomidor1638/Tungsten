@@ -29,7 +29,7 @@ namespace tungsten::twad
         uint8_t     magic[MAGIC_SIZE];
         uint64_t    version;
         uint64_t    checksum;
-        uint64_t    flags;                   // reserved
+        uint64_t    flags; // reserved
         uint64_t    total_size;
         char        name[MAX_NAME_SIZE];
         twad_lump   lumps[LUMPS_COUNT];

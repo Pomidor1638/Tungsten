@@ -22,18 +22,17 @@ namespace tungsten::protocol
         return true;
     }
 
-    bool make_packet_payload(packet_header& header, uint16_t payload_size, const void* payload)
+    bool update_header_payload(packet_header& header, int payload_size, const void* payload)
     {
-        // TODO: need to do checksum funcs
-
-        if (payload_size > MAX_PACKET_PAYLOAD_SIZE)
+        if (payload_size < 0 || payload_size > MAX_PACKET_PAYLOAD_SIZE)
             return false;
 
-        header.checksum = 0;
-        header.payload_size = payload_size;
+        header.checksum = 0; // TODO: need to do checksum funcs
 
+        header.payload_size = static_cast<uint16_t>(payload_size);
         return true;
     }
+
 
     template <uint32_t N>
     bool read_packet_struct(protocol_reader& reader, protocol_string<N>& str)
@@ -142,14 +141,14 @@ namespace tungsten::protocol
     }
 
     // packet_disconnect_req
-    bool read_packet_struct(protocol_reader& reader, packet_disconnect_req& disconnect_req)
+    bool read_packet_struct(protocol_reader& reader, packet_disconnect& disconnect_req)
     {
         if (!reader.read(*reinterpret_cast<uint8_t*>(&disconnect_req.type)))
             return false;
 
         return read_packet_struct(reader, disconnect_req.reason);
     }
-    bool write_packet_struct(protocol_writer& writer, const packet_disconnect_req& disconnect_req)
+    bool write_packet_struct(protocol_writer& writer, const packet_disconnect& disconnect_req)
     {
         if (!writer.write(static_cast<uint8_t>(disconnect_req.type)))
             return false;
@@ -172,24 +171,37 @@ namespace tungsten::protocol
     */
 
 
-    bool validate_header(const packet_header& header, size_t payload_size, const void* payload)
+    bool validate_header(const packet_header& header, uint64_t nonce, int payload_size, const void* payload)
     {
-
         if (header.payload_size > 0 && !payload)
-        {
-            return false;
-        }
+            return false;   
 
-        if (memcmp(header.magic, MAGIC, MAGIC_SIZE) != 0
+        if (
+            memcmp(header.magic, MAGIC, MAGIC_SIZE) != 0
             || header.header_size != PACKET_HEADER_SIZE
             || header.payload_size > MAX_PACKET_PAYLOAD_SIZE
-            || header.payload_size > payload_size) // maybe != ?
-        {
+            || header.receiver_nonce != nonce
+            || static_cast<int>(header.payload_size) > payload_size
+        ) {
             return false;
         }
 
         return header.checksum == 0;
     }
 
+    bool parse_and_validate_packet(int size, const void* data, uint64_t expected_nonce, packet_header& out_header, protocol_reader& out_reader)
+    {
+        if (!data || size < PACKET_HEADER_SIZE || size > MAX_PACKET_SIZE)
+            return false;
 
+        out_reader = protocol_reader{ static_cast<size_t>(size), data };
+
+        if (!read_packet_struct(out_reader, out_header))
+            return false;
+
+        if (!validate_header(out_header, expected_nonce, out_reader.remaining(), out_reader.peek()))
+            return false;
+
+        return true;
+    }
 }

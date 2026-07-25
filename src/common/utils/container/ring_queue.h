@@ -92,8 +92,8 @@ namespace tungsten::util::container
         }
 
         std::array<T, MaxSize> items{};
-        std::size_t head = 0;
-        std::size_t tail = 0;
-        std::size_t count = 0;
+        size_t head = 0;
+        size_t tail = 0;
+        size_t count = 0;
     };
 }

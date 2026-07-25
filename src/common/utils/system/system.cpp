@@ -136,7 +136,7 @@ std::list<std::filesystem::path> getFiles(const std::filesystem::path& dir)
 }
 
 
-std::vector<byte> load_file(const std::string& path)
+std::vector<uint8_t> load_file(const std::string& path)
 {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
 
@@ -149,7 +149,7 @@ std::vector<byte> load_file(const std::string& path)
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
 
-    std::vector<byte> buffer(size);
+    std::vector<uint8_t> buffer(size);
     if (!file.read(reinterpret_cast<char*>(buffer.data()), size))
     {
         file.close();

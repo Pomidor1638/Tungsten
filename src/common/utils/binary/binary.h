@@ -38,7 +38,7 @@ namespace tungsten::util::binary
 		bool can_advance(size_t count) const;
 		void reset_cursor();
 
-	protected:
+		// not safe
 		void advance(size_t count);
 
 	private:
@@ -61,6 +61,7 @@ namespace tungsten::util::binary
 
 		virtual bool seek(size_t offset) = 0;
 		virtual bool skip(size_t count) = 0;
+		virtual bool can_advance(size_t count) const = 0;
 	};
 
 	template <bin_endian_type type>
@@ -92,6 +93,7 @@ namespace tungsten::util::binary
 
 		virtual bool seek(size_t offset) = 0;
 		virtual bool skip(size_t count) = 0;
+		virtual bool can_advance(size_t count) const = 0;
 	};
 
 	template <bin_endian_type type>
@@ -140,6 +142,8 @@ namespace tungsten::util::binary
 		bool eof() const override { return cursor.eof(); }
 		bool seek(size_t offset) override { return cursor.seek(offset); }
 		bool skip(size_t count) override { return cursor.skip(count); }
+		bool can_advance(size_t count) const override { return cursor.can_advance(count); };
+
 
 		const void* peek() const
 		{
@@ -179,6 +183,7 @@ namespace tungsten::util::binary
 		bool eof() const override { return cursor.eof(); }
 		bool seek(size_t offset) override { return cursor.seek(offset); }
 		bool skip(size_t count) override { return cursor.skip(count); }
+		bool can_advance(size_t count) const override { return cursor.can_advance(count); };
 
 		void* peek()
 		{

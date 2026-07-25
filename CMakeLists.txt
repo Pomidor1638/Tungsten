@@ -248,6 +248,7 @@ tg_collect_sources(TG_TWADEDITOR_SOURCES
 tg_collect_sources(TG_TEST_SOURCES
     "test"
     "common/formats/protocol"
+    "common/utils/binary"
 )
 
 # =============================================================================

@@ -1,24 +1,28 @@
 #pragma once
 
 #include <cstdint>
-#include "container/static_span.h"
+#include <span>
 #include "../../utils/binary/binary.h"
 
 namespace tungsten::protocol
 {
-	constexpr size_t	MAX_PACKET_SIZE = 1024;
+	constexpr int		MAX_PACKET_SIZE = 1024;
 	constexpr uint64_t	NO_NONCE		= UINT64_MAX;
+
+	static_assert(MAX_PACKET_SIZE > 0, "MAX_PACKET_SIZE overflows int!");
+
 
 	// Fixed string with explicit size. It does not require null termination.
 
 	template <uint32_t N>
-	struct protocol_string
+	struct protocol_string // maybe should use fixed_string?
 	{
 		uint32_t	size;
 		char 		data[N];
 	};
 
-	using data_span  = util::container::static_span<const void>;
+	// [packet_header][payload]
+	using packet_t = uint8_t[MAX_PACKET_SIZE];
 
 	/*
 		TODO:
@@ -31,10 +35,10 @@ namespace tungsten::protocol
 	{
 		none = 0,
 
-		corrupted_packet,
-		unexcepted_packet,
-		unknown_packet,
-		// all not known violation 
+		corrupted_packet, // layout violation or var's values
+		unexcepted_packet, 
+		unknown_packet, // how actually check this?
+		// all other/unknown violation 
 		remote_violation,
 	};
 
