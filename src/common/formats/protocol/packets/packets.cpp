@@ -62,7 +62,7 @@ namespace tungsten::protocol
     // packet_header
     bool read_packet_struct(protocol_reader& reader, packet_header& header)
     {
-        if (!reader.can_advance(sizeof(header)))
+        if (!reader.can_advance(PACKET_HEADER_SIZE))
             return false;
 
         reader.read(header.timestamp_us);
@@ -131,11 +131,11 @@ namespace tungsten::protocol
 
 
     // packet_error
-    bool read_packet_struct(protocol_reader& reader, packet_error& error)
+    bool read_packet_struct(protocol_reader& reader, packet_error_header& error)
     {
         return reader.read(*reinterpret_cast<uint8_t*>(&error.code));
     }
-    bool write_packet_struct(protocol_writer& writer, const packet_error& error)
+    bool write_packet_struct(protocol_writer& writer, const packet_error_header& error)
     {
         return writer.write(static_cast<uint8_t>(error.code));
     }
@@ -156,19 +156,51 @@ namespace tungsten::protocol
         return write_packet_struct(writer, disconnect_req.reason);
     }
 
-    // packet_disconnect_ack
-    /*
-    template <>
-    bool read_packet_struct(protocol_reader& reader)
+    // file_info
+    bool read_packet_struct(protocol_reader& reader, file_info& value)
     {
-        return true;
+        if (!reader.read(value.checksum))
+            return false;
+        if (!reader.read(value.size))
+            return false;
+        return read_packet_struct(reader, value.name);
     }
-    template <>
-    bool write_packet_struct(protocol_writer& writer)
+    bool write_packet_struct(protocol_writer& writer, const file_info& value)
     {
-        return true;
+        if (!writer.write(value.checksum))
+            return false;
+        if (!writer.write(value.size))
+            return false;
+        return write_packet_struct(writer, value.name);
     }
-    */
+
+    // sv_file_manifest_header
+    bool read_packet_struct(protocol_reader& reader, packet_sv_file_manifest_header& value)
+    {
+        if (!reader.read(value.total_size))
+            return false;
+        return reader.read(value.files_count);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_sv_file_manifest_header& value)
+    {
+        if (!writer.write(value.total_size))
+            return false;
+        return writer.write(value.files_count);
+    }
+
+    // cl_file_manifest_header
+    bool read_packet_struct(protocol_reader& reader, packet_cl_file_manifest_header& value)
+    {
+        if (!reader.read(value.total_count))
+            return false;
+        return reader.read(value.missed_count);
+    }
+    bool write_packet_struct(protocol_writer& writer, const packet_cl_file_manifest_header& value)
+    {
+        if (!writer.write(value.total_count))
+            return false;
+        return writer.write(value.missed_count);
+    }
 
 
     bool validate_header(const packet_header& header, uint64_t nonce, int payload_size, const void* payload)

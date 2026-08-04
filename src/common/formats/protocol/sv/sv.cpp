@@ -46,6 +46,12 @@ namespace tungsten::protocol
         pure_reset();
     }
 
+
+    void server_client_fsm::set_server_callbacks(server_fsm_callbacks callbacks)
+    {
+        sv_callbacks = callbacks;
+    }
+
     
     void server_client_fsm::on_disconnect(disconnect_type type, const disconnect_reason& reason)
     {
@@ -70,7 +76,51 @@ namespace tungsten::protocol
 
 	void server_client_fsm::on_recv_loading(const packet_header& header, protocol_reader& reader){}
     
-	void server_client_fsm::on_recv_active(const packet_header& header, protocol_reader& reader){}
+
+    bool server_client_fsm::call_on_recv_usercmd(int size, const void* data)
+    {
+        auto& usercmd_func = sv_callbacks.on_recv_usercmd;
+        if (!usercmd_func)
+            return false;
+        return usercmd_func(get_context(), size, data);
+    }
+    /*bool server_client_fsm::call_on_recv_message(int size, const void* data)
+    {
+        auto& message_func = sv_callbacks.on_recv_message;
+        if (!message_func)
+            return false;
+        return message_func(get_context(), size, data);
+    }*/
+
+    void server_client_fsm::process_usercmd(const packet_header& header, protocol_reader& reader)
+    {
+        if (!call_on_recv_usercmd(reader.remaining(), reader.peek()))
+        {
+            send_protocol_error(protocol_error_type::serialize_violation);
+            error(fsm_error{ fsm_error_type::serialize_violation });
+        }
+    }
+    /*void server_client_fsm::on_recv_active_message(const packet_header& header, protocol_reader& reader)
+    {
+        if (!call_on_recv_message(reader.remaining(), reader.peek()))
+        {
+            send_protocol_error(protocol_error_type::serialize_violation);
+            error(fsm_error{ fsm_error_type::serialize_violation });
+        }
+    }*/
+
+	void server_client_fsm::on_recv_active(const packet_header& header, protocol_reader& reader)
+    {
+        switch (header.type)
+        {
+        case packet_type::cl_usercmd : process_usercmd(header, reader); break;
+        // case packet_type::message_req: on_recv_active_message(header, reader); break;
+        default:
+            send_protocol_error(protocol_error_type::unknown_packet);
+            error(fsm_error{ fsm_error_type::unknown_packet });
+            break;
+        }
+    }
     
     bool server_client_fsm::send_conn_accept(bool need_file_sync)
     {
@@ -147,6 +197,58 @@ namespace tungsten::protocol
 
         return true;
     }
+
+    void server_client_fsm::snapshot(int size, const void* data)
+    {
+        if (main_stage != server_main_stage::active)
+        {
+            error(fsm_error{fsm_error_type::unexpected_signal});
+            return;
+        }
+
+        if (size < 0 || size > MAX_PACKET_PAYLOAD_SIZE || (size > 0 && !data))
+        {
+            send_protocol_error(protocol_error_type::serialize_violation);
+            error(fsm_error{ fsm_error_type::serialize_violation });
+            return;
+        }
+
+        send_packet_generic(
+            false,
+            packet_type::sv_snapshot,
+            0,
+            [&](protocol_writer& w)
+            {
+                return w.write_bytes(static_cast<size_t>(size), data);
+            }
+        );
+    }
+
+    //void server_client_fsm::message(int size, const void* data)
+    //{
+    //    if (main_stage != server_main_stage::active)
+    //    {
+    //        error(fsm_error{ fsm_error_type::unexpected_signal });
+    //        return;
+    //    }
+
+    //    if (size < 0 || size > MAX_PACKET_PAYLOAD_SIZE || (size > 0 && !data))
+    //    {
+    //        send_protocol_error(protocol_error_type::serialize_violation);
+    //        error(fsm_error{ fsm_error_type::serialize_violation });
+    //        return;
+    //    }
+
+    //    send_packet_generic(
+    //        true,
+    //        packet_type::message_req,
+    //        0,
+    //        [&](protocol_writer& w)
+    //        {
+    //            return w.write_bytes(static_cast<size_t>(size), data);
+    //        }
+    //    );
+    //}
     
     void server_client_fsm::disconnect(disconnect_type type, const disconnect_reason& reason)
     {

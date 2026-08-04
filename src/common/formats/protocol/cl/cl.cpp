@@ -32,6 +32,33 @@ namespace tungsten::protocol
     }
 
 
+    void client_fsm::usercmd(int size, const void* data)
+    {
+        if (main_stage != client_main_stage::active)
+        {
+            error(fsm_error{ fsm_error_type::unexpected_signal });
+            return;
+        }
+
+        if (size < 0 || size > MAX_PACKET_PAYLOAD_SIZE || (size > 0 && !data))
+        {
+            send_protocol_error(protocol_error_type::serialize_violation);
+            error(fsm_error{ fsm_error_type::serialize_violation });
+            return;
+        }
+
+        send_packet_generic(
+            false,
+            packet_type::cl_usercmd,
+            0,
+            [&](protocol_writer& w)
+            {
+                return w.write_bytes(static_cast<size_t>(size), data);
+            }
+        );
+    }
+
+
     void client_fsm::disconnect(disconnect_type type, const disconnect_reason& reason)
     {
         using enum client_main_stage;
@@ -87,6 +114,14 @@ namespace tungsten::protocol
         return true;
     }
 
+    bool client_fsm::call_snapshot(int size, const void* data)
+    {
+        auto& snapshot_func = cl_callbacks.on_snapshot;
+        if (!snapshot_func)
+            return false;
+        return snapshot_func(get_context(), size, data);
+    }
+
     void client_fsm::process_conn_accept(const packet_header& header, protocol_reader& reader)
     {
         packet_conn_accept conn_accept;
@@ -122,7 +157,7 @@ namespace tungsten::protocol
         case packet_type::conn_accept: process_conn_accept(header, reader); break;
         case packet_type::conn_reject: process_conn_reject(header, reader); break;
         default:
-            send_protocol_error(protocol_error::unexcepted_packet);
+            send_protocol_error(protocol_error_type::unexcepted_packet);
             error(fsm_error{ fsm_error_type::unexpected_packet, });
             break;
         }
@@ -148,11 +183,25 @@ namespace tungsten::protocol
         );
     }
 
+
+    void client_fsm::process_snapshot(const packet_header& header, protocol_reader& reader)
+    {
+        if (!call_snapshot(reader.remaining(), reader.peek()))
+        {
+            send_protocol_error(protocol_error_type::serialize_violation);
+            error(fsm_error{ fsm_error_type::serialize_violation });
+        }
+    }
+
     void client_fsm::on_recv_active(const packet_header& header, protocol_reader& reader)
     {
         switch (header.type)
         {
+        case packet_type::sv_snapshot: process_snapshot(header, reader); break;
+            // case packet_type::message_req: process_message(header, reader); break;
         default:
+            send_protocol_error(protocol_error_type::unknown_packet);
+            error(fsm_error{ fsm_error_type::unknown_packet });
             break;
         }
     }

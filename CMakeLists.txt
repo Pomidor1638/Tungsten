@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 
 project(Tungsten LANGUAGES C CXX)
 
@@ -17,12 +17,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(TG_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/src" CACHE PATH "Tungsten source root")
 
 # Try to auto-detect the real source root when CMakeLists.txt was put one level above.
-if(NOT EXISTS "${TG_SOURCE_ROOT}/tengine/main.cpp")
+if(NOT EXISTS "${TG_SOURCE_ROOT}/common/formats/protocol/protocol.h")
     foreach(candidate
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}"
     )
-        if(EXISTS "${candidate}/tengine/main.cpp")
+        if(EXISTS "${candidate}/common/formats/protocol/protocol.h")
             set(TG_SOURCE_ROOT "${candidate}" CACHE PATH "Tungsten source root" FORCE)
             break()
         endif()
@@ -106,10 +106,13 @@ function(tg_apply_common_settings TARGET_NAME)
         "${TG_SOURCE_ROOT}"
         "${TG_SOURCE_ROOT}/common"
         "${TG_SOURCE_ROOT}/common/formats"
-        "${TG_SOURCE_ROOT}/common/utils"
-        "${TG_SOURCE_ROOT}/tengine"
-        "${TG_SOURCE_ROOT}/tengine/client"
-        "${TG_SOURCE_ROOT}/tengine/server"
+        "${TG_SOURCE_ROOT}/runtime"
+        "${TG_SOURCE_ROOT}/runtime/common"
+        "${TG_SOURCE_ROOT}/runtime/game"
+        "${TG_SOURCE_ROOT}/runtime/game/client"
+        "${TG_SOURCE_ROOT}/runtime/tclient"
+        "${TG_SOURCE_ROOT}/runtime/tclient/world"
+        "${TG_SOURCE_ROOT}/runtime/tserver"
     )
 
     if(MSVC)
@@ -193,9 +196,9 @@ function(tg_add_executable TARGET_NAME)
     endif()
 
     if(ARG_EXCLUDE_FROM_ALL)
-        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp" "src/common/formats/twad/tmaterial/tmaterial.h" "src/common/formats/twad/tmodel/tmodel.h" "src/common/formats/twad/tprog/tpog.h" "src/common/formats/twad/tsound/tsound.h")
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources})
     else()
-        add_executable(${TARGET_NAME} ${target_sources} "src/tengine/common/net/net.h" "src/common/platform/memory/memory.h"  "src/common/utils/binary/binary.h" "src/common/utils/binary/binary.cpp" "src/common/platform/memory/memory.cpp" "src/common/formats/twad/tmaterial/tmaterial.h" "src/common/formats/twad/tmodel/tmodel.h" "src/common/formats/twad/tprog/tpog.h" "src/common/formats/twad/tsound/tsound.h")
+        add_executable(${TARGET_NAME} ${target_sources})
     endif()
 
     tg_apply_common_settings(${TARGET_NAME})
@@ -218,37 +221,90 @@ endfunction()
 # =============================================================================
 # Source sets
 # =============================================================================
+set(TG_COMMON_BASE_SOURCES)
 
-tg_collect_sources(TG_SHARED_SOURCES
-    "common/formats/twad"
+tg_collect_sources(TG_COMMON_SHARED_SOURCES
+    "common/console"
+    "common/formats"
+    "common/allocator"
+    "common/binary"
+    "common/compress"
+    "common/container"
+    "common/endian"
+    "common/hash"
+    "common/math"
+    "common/string"
 )
 
-tg_collect_sources(TG_ENGINE_SOURCES
-    "tengine/client"
-    "tengine/server"
-    "tengine/common"
-    "tengine/shared"
+tg_collect_sources(TG_RUNTIME_COMMON_SOURCES
+    "runtime/common/host"
+    "runtime/common/net"
+)
+
+set(TG_GAME_CLIENT_MAIN "${TG_SOURCE_ROOT}/runtime/game/client/main.cpp")
+set(TG_GAME_SERVER_MAIN "${TG_SOURCE_ROOT}/runtime/game/server/main.cpp")
+
+set(TG_SYS_BACKEND "sdl" CACHE STRING "Tungsten sys backend")
+set_property(CACHE TG_SYS_BACKEND PROPERTY STRINGS sdl ps2)
+
+set(TG_RUNTIME_SYS_SOURCES)
+
+foreach(src IN ITEMS
+    "runtime/common/sys/sys.h"
+    "runtime/common/sys/sys_local.h"
+    "runtime/common/sys/sys.cpp"
+    "runtime/common/sys/tinyfiledialogs.h"
+    "runtime/common/sys/tinyfiledialogs.c"
+)
+    if(EXISTS "${TG_SOURCE_ROOT}/${src}")
+        list(APPEND TG_RUNTIME_SYS_SOURCES "${TG_SOURCE_ROOT}/${src}")
+    endif()
+endforeach()
+
+if(TG_SYS_BACKEND STREQUAL "sdl")
+    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/sys_sdl.cpp")
+elseif(TG_SYS_BACKEND STREQUAL "ps2")
+    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/sys_ps2.cpp")
+else()
+    message(FATAL_ERROR "Unknown TG_SYS_BACKEND: ${TG_SYS_BACKEND}")
+endif()
+
+if(EXISTS "${TG_SOURCE_ROOT}/${TG_SYS_BACKEND_SOURCE}")
+    list(APPEND TG_RUNTIME_SYS_SOURCES "${TG_SOURCE_ROOT}/${TG_SYS_BACKEND_SOURCE}")
+else()
+    message(WARNING "Selected sys backend source not found: ${TG_SOURCE_ROOT}/${TG_SYS_BACKEND_SOURCE}")
+endif()
+
+tg_collect_sources(TG_TCLIENT_SOURCES
+    "runtime/tclient"
+)
+list(REMOVE_ITEM TG_TCLIENT_SOURCES
+    "${TG_SOURCE_ROOT}/runtime/tclient/main.cpp"
+)
+
+tg_collect_sources(TG_TSERVER_SOURCES
+    "runtime/tserver"
+)
+list(REMOVE_ITEM TG_TSERVER_SOURCES
+    "${TG_SOURCE_ROOT}/runtime/tserver/main.cpp"
 )
 
 tg_collect_sources(TG_TBSPCOMPILER_SOURCES
-    "compiler/tbsp"
-    "tbsp"
+    "tools/tbsp"
 )
 
 tg_collect_sources(TG_TMAPEDITOR_SOURCES
-    "editor/tmapeditor"
-    "tmapeditor"
+    "tools/tmapeditor"
 )
 
 tg_collect_sources(TG_TWADEDITOR_SOURCES
-    "editor/twad"
-    "twad"
+    "tools/twad"
 )
 
 tg_collect_sources(TG_TEST_SOURCES
     "test"
     "common/formats/protocol"
-    "common/utils/binary"
+    "common/binary"
 )
 
 # =============================================================================
@@ -256,15 +312,15 @@ tg_collect_sources(TG_TEST_SOURCES
 # =============================================================================
 
 set(TG_TENGINE_SOURCES
-    ${TG_SHARED_SOURCES}
-    ${TG_ENGINE_SOURCES}
+    ${TG_COMMON_BASE_SOURCES}
+    ${TG_COMMON_SHARED_SOURCES}
+    
+    ${TG_RUNTIME_COMMON_SOURCES}
+    ${TG_RUNTIME_SYS_SOURCES}
+    ${TG_GAME_CLIENT_MAIN}
+    ${TG_TCLIENT_SOURCES}
+    ${TG_TSERVER_SOURCES}
 )
-
-if(EXISTS "${TG_SOURCE_ROOT}/tengine/main.cpp")
-    list(APPEND TG_TENGINE_SOURCES "${TG_SOURCE_ROOT}/tengine/main.cpp")
-else()
-    message(WARNING "tengine: ${TG_SOURCE_ROOT}/tengine/main.cpp not found. Check TG_SOURCE_ROOT.")
-endif()
 
 tg_add_executable(tengine
     FOLDER "runtime"
@@ -278,7 +334,9 @@ tg_add_executable(tengine
 # =============================================================================
 
 set(TG_TBSPCOMPILER_ALL_SOURCES
-    ${TG_SHARED_SOURCES}
+    ${TG_COMMON_BASE_SOURCES}
+    ${TG_COMMON_SHARED_SOURCES}
+    
     ${TG_TBSPCOMPILER_SOURCES}
 )
 
@@ -294,7 +352,9 @@ tg_add_executable(tbspcompiler
 # =============================================================================
 
 set(TG_TMAPEDITOR_ALL_SOURCES
-    ${TG_SHARED_SOURCES}
+    ${TG_COMMON_BASE_SOURCES}
+    ${TG_COMMON_SHARED_SOURCES}
+    
     ${TG_TMAPEDITOR_SOURCES}
 )
 
@@ -310,7 +370,9 @@ tg_add_executable(tmapeditor
 # =============================================================================
 
 set(TG_TWADEDITOR_ALL_SOURCES
-    ${TG_SHARED_SOURCES}
+    ${TG_COMMON_BASE_SOURCES}
+    ${TG_COMMON_SHARED_SOURCES}
+    
     ${TG_TWADEDITOR_SOURCES}
 )
 
@@ -342,3 +404,6 @@ tg_add_executable(test
 # =============================================================================
 
 set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT tengine)
+
+
+

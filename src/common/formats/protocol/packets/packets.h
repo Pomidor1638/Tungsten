@@ -44,36 +44,37 @@ namespace tungsten::protocol
 
         // connection stage
         conn_req,
-        // conn_cancel,
         conn_accept,
         conn_reject,
 
         // file_sync stage
-        // sv_file_manifest,
-        // cl_need_manifest,
+        sv_file_manifest,
+        cl_need_manifest,
 
         // level_sync stage
         // sv_levelstate,
-        // sv_snapshot,
         // cl_snapshot_ack,
         // cl_ready,
-        // cl_usercmd,
-        // sv_usercmd_ack,
+        
+        // active stage
+        sv_snapshot,
+        cl_usercmd,
+
+        //message_req,
+        //message_ack,
 
         cl_status_req,
         sv_status_ack,
 
-/*
-    TODO:
-        define of disconnect req/ack:
-        1. disconnect without acknowledge           P.S. <- this one
-        2. disconnect always with ack.
-        3. disconnect particially with ack. (like cancel oro smthng)
-*/
-        disconnect,
+        /*
+            TODO:
+                define of disconnect req/ack:
+                1. disconnect without acknowledge           P.S. <- this one
+                2. disconnect always with ack.
+                3. disconnect particially with ack. (like cancel oro smthng)
+        */
 
-        // event_req,
-        // event_ack,
+        disconnect,
     };
 
 
@@ -93,7 +94,7 @@ namespace tungsten::protocol
     };
 
     constexpr int PACKET_HEADER_SIZE =
-          sizeof(packet_header::timestamp_us)
+        sizeof(packet_header::timestamp_us)
         + sizeof(packet_header::magic)
         + sizeof(packet_header::protocol_version)
         + sizeof(packet_header::receiver_nonce)
@@ -107,11 +108,20 @@ namespace tungsten::protocol
 
 
     // --- Concrete Packet Payloads ---
-    struct packet_error
+
+    // --- base packets ---
+    struct packet_error_header
     {
-        protocol_error code;
+        protocol_error_type code;
     };
 
+    struct packet_disconnect
+    {
+        disconnect_type   type;
+        disconnect_reason reason;
+    };
+
+    // --- connection stage packets ---
     struct packet_conn_req
     {
         uint64_t client_nonce;
@@ -119,8 +129,8 @@ namespace tungsten::protocol
 
     struct packet_conn_accept
     {
-        uint64_t    server_nonce;
-        uint8_t     need_file_sync;
+        uint64_t server_nonce;
+        uint8_t  need_file_sync;
     };
 
     struct packet_conn_reject
@@ -128,10 +138,46 @@ namespace tungsten::protocol
         reject_reason reason;
     };
 
-    struct packet_disconnect
+    // --- loading stage packets ---
+
+    // ------ file sync stage ------
+
+
+    /*
+        [packet_sv_file_manifest_header]
+        [file_info] for (packet_sv_file_manifest_header.files_count)
+
+        there is no data, only names and checksums
+    */
+
+    struct packet_sv_file_manifest_header
     {
-        disconnect_type     type;
-        disconnect_reason   reason;
+        uint64_t total_size;
+        uint64_t files_count;
+    };
+
+    /*
+        [cl_file_manifest_header]
+        [flag bits], for (total_count)
+    */
+
+    struct packet_cl_file_manifest_header
+    {
+        uint64_t  total_count;
+        uint64_t missed_count;
+    };
+
+    // --- active stage packets ---
+
+    // cl_usercmd and sv_snapshot shares the same struct, 
+    // usercmd - from clients, snapshot - from server
+
+    // [packet_snapshot_header][snapshot's payload]
+    
+    struct packet_snapshot_header 
+    {
+        uint64_t total_size;    
+        uint64_t last_snapshot; // or last usercmd
     };
 
 
@@ -150,7 +196,7 @@ namespace tungsten::protocol
 
     bool update_header_payload(packet_header& header, int payload_size, const void* payload);
 
-    
+
     // packet_header
     bool read_packet_struct(protocol_reader& reader, packet_header& header);
     bool write_packet_struct(protocol_writer& writer, const packet_header& header);
@@ -168,12 +214,25 @@ namespace tungsten::protocol
     bool write_packet_struct(protocol_writer& writer, const packet_conn_reject& value);
 
     // packet_error
-    bool read_packet_struct(protocol_reader& reader, packet_error& value);
-    bool write_packet_struct(protocol_writer& writer, const packet_error& value);
+    bool read_packet_struct(protocol_reader& reader, packet_error_header& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_error_header& value);
 
     // packet_disconnect_req
     bool read_packet_struct(protocol_reader& reader, packet_disconnect& value);
     bool write_packet_struct(protocol_writer& writer, const packet_disconnect& value);
+
+    // file_info
+    bool read_packet_struct(protocol_reader& reader, file_info& value);
+    bool write_packet_struct(protocol_writer& writer, const file_info& value);
+
+    // sv_file_manifest_header
+    bool read_packet_struct(protocol_reader& reader, packet_sv_file_manifest_header& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_sv_file_manifest_header& value);
+
+    // cl_file_manifest_header
+    bool read_packet_struct(protocol_reader& reader, packet_cl_file_manifest_header& value);
+    bool write_packet_struct(protocol_writer& writer, const packet_cl_file_manifest_header& value);
+
 
 
     // base validate
@@ -182,13 +241,13 @@ namespace tungsten::protocol
     template <typename F>
     bool pack_packet_to_buffer(
         int         max_size,
-        void*       buffer,
-        int&        out_total_size,
+        void* buffer,
+        int& out_total_size,
         uint64_t    timestamp_us,
         packet_type type,
         uint8_t     flags,
         uint64_t    nonce,
-        F&&         write_payload_func
+        F&& write_payload_func
     ) {
         if (!buffer || max_size < PACKET_HEADER_SIZE)
             return false;
@@ -201,7 +260,7 @@ namespace tungsten::protocol
         if (!write_payload_func(writer))
             return false;
 
-        out_total_size   = static_cast<int>(writer.tell());
+        out_total_size = static_cast<int>(writer.tell());
         int payload_size = out_total_size - PACKET_HEADER_SIZE;
 
         packet_header header;
@@ -215,8 +274,5 @@ namespace tungsten::protocol
         return write_packet_struct(writer, header);
     }
 
-
     bool parse_and_validate_packet(int size, const void* data, uint64_t expected_nonce, packet_header& out_header, protocol_reader& out_reader);
-
-
 }

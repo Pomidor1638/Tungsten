@@ -4,7 +4,6 @@
 
 #include "../protocol.h"
 #include "../packets/packets.h"
-#include "../../../platform/memory/memory.h"
 
 namespace tungsten::protocol
 {
@@ -100,9 +99,9 @@ namespace tungsten::protocol
         );
     }
 
-    bool base_fsm::send_protocol_error(protocol_error type)
+    bool base_fsm::send_protocol_error(protocol_error_type type)
     {
-        packet_error err{ .code = type };
+        packet_error_header err{ .code = type };
 
         return send_packet_generic(
             true, 
@@ -125,7 +124,7 @@ namespace tungsten::protocol
 
     void base_fsm::on_recv_error(const packet_header& header, protocol_reader& reader)
     {
-        packet_error err;
+        packet_error_header err;
 
         if (!read_packet_struct(reader, err))
         {
@@ -142,7 +141,7 @@ namespace tungsten::protocol
         packet_disconnect disconnect_req;
         if (!read_packet_struct(reader, disconnect_req))
         {
-            error(fsm_error{ fsm_error_type::corruted_packet, protocol_error::corrupted_packet });
+            error(fsm_error{ fsm_error_type::corruted_packet, protocol_error_type::corrupted_packet });
             return;
         }
 

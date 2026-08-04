@@ -49,7 +49,7 @@ namespace tungsten::protocol
         fsm_error_type type;
         union
         {
-            protocol_error protocol_err;
+            protocol_error_type protocol_err;
         };
     };
 
@@ -109,18 +109,17 @@ namespace tungsten::protocol
         void call_send(bool reliable, int size, const void* data);
 
         // send utils
-        bool send_protocol_error(protocol_error code);
+        bool send_protocol_error(protocol_error_type code);
         bool send_disconnect(disconnect_type type, const disconnect_reason& reason);
 
         template <typename F>
         bool send_packet_generic(bool reliable, packet_type type, uint8_t flags, F&& write_payload_func)
         {
-            packet_t packet;
             int total_size = 0;
 
             if (!pack_packet_to_buffer(
-                sizeof(packet),
-                &packet,
+                sizeof(send_scratch_buffer),
+                &send_scratch_buffer,
                 total_size,
                 get_timestamp_us(),
                 type,
@@ -132,14 +131,17 @@ namespace tungsten::protocol
                 return false;
             }
 
-            call_send(reliable, total_size, &packet);
+            call_send(reliable, total_size, &send_scratch_buffer);
             return true;
         }
 
     private:
+
+        packet_t send_scratch_buffer;
+
         //  timing:
         uint64_t    curr_timestamp_us = 0;
-        uint64_t    curr_delta_us = 0;
+        uint64_t    curr_delta_us     = 0;
 
         void        update_timing(uint64_t delta_us);
         void        reset_timing();

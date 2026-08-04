@@ -100,11 +100,13 @@ namespace tungsten::protocol
 
     typedef void(*on_connection_accepted_func)(void* context, bool need_file_sync);
     typedef void(*on_connection_rejected_func)(void* context, const reject_reason& reason);
+    typedef bool(*           on_snapshot_func)(void* ctx, int size, const void* data);
 
     struct client_fsm_callbacks
     {
         on_connection_accepted_func on_conn_accepted = nullptr;
         on_connection_rejected_func on_conn_rejected = nullptr;
+        on_snapshot_func            on_snapshot      = nullptr;
     };
 
 
@@ -118,6 +120,8 @@ namespace tungsten::protocol
 
         void open(uint64_t nonce);
         void disconnect(disconnect_type type, const disconnect_reason& reason) override;
+
+        void usercmd(int size, const void* data);
 
     private:
 
@@ -141,11 +145,12 @@ namespace tungsten::protocol
         client_level_sync_stage level_sync_stage = client_level_sync_stage::idle;
 
         // stage/type process utils
-        void on_recv_connecting(const packet_header& header, protocol_reader& reader);
+        void on_recv_connecting     (const packet_header& header, protocol_reader& reader);
             void process_conn_accept(const packet_header& header, protocol_reader& reader);
             void process_conn_reject(const packet_header& header, protocol_reader& reader);
-        void on_recv_loading(const packet_header& header, protocol_reader& reader);
-        void on_recv_active(const packet_header& header, protocol_reader& reader);
+        void on_recv_loading        (const packet_header& header, protocol_reader& reader);
+        void on_recv_active         (const packet_header& header, protocol_reader& reader);
+            void process_snapshot   (const packet_header& header, protocol_reader& reader);
 
         // fsm utils
         void to_main_stage_disconnected();
@@ -159,6 +164,6 @@ namespace tungsten::protocol
         // callbacks utils
         bool call_connection_accepted(bool need_file_sync);
         bool call_connection_rejected(const reject_reason& reason);
-
+        bool call_snapshot(int size, const void* data);
     };
 }

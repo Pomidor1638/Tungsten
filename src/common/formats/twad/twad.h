@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shared.h"
+#include "twad_local.h"
 
 namespace tungsten::twad
 {

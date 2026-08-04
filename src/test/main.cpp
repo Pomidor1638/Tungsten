@@ -118,13 +118,34 @@ int main()
             std::cout << "  [CL] Connection rejected, reason: " << s << std::endl;
         };
 
+    cl_callbacks.on_snapshot = [](void* ctx, int size, const void* data) -> bool
+        {
+            std::cout << "[CL] Snapshot received, size: " << size << std::endl;
+            return true;
+        };
+
     client.set_client_callbacks(cl_callbacks);
+
+    server_fsm_callbacks sv_callbacks;
+
+    sv_callbacks.on_recv_usercmd = [](void* ctx, int size, const void* data) -> bool
+        {
+            std::cout << "[SV] UserCmd received, size: " << size << std::endl;
+            return true;
+        };
+
+    server_slot.set_server_callbacks(sv_callbacks);
 
     std::cout << "[TEST] Step 1: Client calls open()..., Server checks this and calls open()" << std::endl;
     client.open(client_nonce);
 
-    std::cout << "[TEST] Step 2: Server initiates disconnect()..." << std::endl;
+    std::cout << "[TEST] Step 2: Clients sends usercmd" << std::endl;
+    client.usercmd(0, nullptr);
 
+    std::cout << "[TEST] Step 3: Server initiates disconnect()..." << std::endl;
+    server_slot.snapshot(0, nullptr);
+
+    std::cout << "[TEST] Step 4: Server initiates disconnect()..." << std::endl;
     disconnect_reason reason{};
     const char* kick_text = "kicked for being dumbass";
     reason.size = static_cast<uint32_t>(std::strlen(kick_text));
