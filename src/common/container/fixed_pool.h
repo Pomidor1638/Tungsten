@@ -7,7 +7,7 @@
 #include <utility>
 #include <new>
 
-namespace tungsten::util::container
+namespace tungsten::container
 {
     template<class T, size_t pool_capacity>
     class fixed_pool final

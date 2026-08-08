@@ -1,8 +1,11 @@
 #pragma once
 
+
+#include "binary/binary.h"
+
 #include <cstdint>
 #include <span>
-#include "../../utils/binary/binary.h"
+
 
 namespace tungsten::protocol
 {
@@ -89,7 +92,9 @@ namespace tungsten::protocol
 		them against the absolute physical network limit: MAX_PACKET_PAYLOAD_SIZE.
 	*/
 
-	using protocol_reader = util::binary::memory_reader<util::binary::bin_endian_type::big>;
-	using protocol_writer = util::binary::memory_writer<util::binary::bin_endian_type::big>;
+	constexpr binary::bin_endian_type protocol_endian = binary::bin_endian_type::big;
+
+	using protocol_reader = binary::memory_reader<protocol_endian>;
+	using protocol_writer = binary::memory_writer<protocol_endian>;
 }
 

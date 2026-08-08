@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <utility>
 
-namespace tungsten::util::container
+namespace tungsten::container
 {
     template <typename T, std::size_t MaxSize>
     class ring_queue final

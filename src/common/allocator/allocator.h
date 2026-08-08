@@ -1,4 +1,5 @@
 #pragma once
+
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -7,7 +8,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace tungsten::util::allocator
+namespace tungsten::allocator
 {
     class LinearAllocator final
     {
@@ -16,8 +17,8 @@ namespace tungsten::util::allocator
         struct Marker
         {
             size_t offset_pointer = 0;
-            void*  last_record    = nullptr;
-            size_t generation     = 0;
+            void* last_record = nullptr;
+            size_t generation = 0;
         };
 
 
@@ -42,16 +43,16 @@ namespace tungsten::util::allocator
         }
 
 
-        LinearAllocator(const LinearAllocator&)             = delete;
-        LinearAllocator(LinearAllocator&&)                  = delete;
-        LinearAllocator& operator=(const LinearAllocator&)  = delete;
+        LinearAllocator(const LinearAllocator&) = delete;
+        LinearAllocator(LinearAllocator&&) = delete;
+        LinearAllocator& operator=(const LinearAllocator&) = delete;
 
         Marker mark() const
         {
             Marker marker{};
             marker.offset_pointer = offset_pointer;
-            marker.last_record    = last_record;
-            marker.generation     = generation;
+            marker.last_record = last_record;
+            marker.generation = generation;
 
             return marker;
         }
@@ -72,7 +73,7 @@ namespace tungsten::util::allocator
                 if (record_offset < marker.offset_pointer)
                     throw std::runtime_error("LinearAllocator rollback corruption: destructor record is before marker");
 
-                DestructorRecord* record   =      last_record;
+                DestructorRecord* record = last_record;
                 DestructorRecord* previous = record->previous;
 
                 destroy_record(record);
@@ -113,8 +114,8 @@ namespace tungsten::util::allocator
                 throw std::runtime_error("LinearAllocator allocation size overflow");
 
             const size_t object_padding = align_padding(offset_pointer, object_alignment);
-            const size_t object_offset  = offset_pointer + object_padding;
-            const size_t objects_size   = object_size * count;
+            const size_t object_offset = offset_pointer + object_padding;
+            const size_t objects_size = object_size * count;
 
             if (object_offset < offset_pointer)
                 throw std::runtime_error("LinearAllocator allocation offset overflow");
@@ -194,7 +195,7 @@ namespace tungsten::util::allocator
             static_cast<T*>(object)->~T();
         }
 
-        struct DestructorRecord 
+        struct DestructorRecord
         {
             void (*destroy)(void*);
             void* object;
@@ -204,11 +205,11 @@ namespace tungsten::util::allocator
             DestructorRecord* previous;
         };
 
-        uint8_t* memory_block           = nullptr;
-        size_t   hunk_size              = 0;
-        size_t   offset_pointer         = 0;
-        size_t   generation             = 0;
-        DestructorRecord* last_record   = nullptr;
+        uint8_t* memory_block = nullptr;
+        size_t   hunk_size = 0;
+        size_t   offset_pointer = 0;
+        size_t   generation = 0;
+        DestructorRecord* last_record = nullptr;
 
         /*
 
@@ -222,7 +223,7 @@ namespace tungsten::util::allocator
 
             ... etc
 
-            <        higher address> 
+            <        higher address>
 
         */
 
@@ -258,8 +259,8 @@ namespace tungsten::util::allocator
 
         void validate_record_pointer(const DestructorRecord* record) const
         {
-            const uintptr_t base    = reinterpret_cast<uintptr_t>(memory_block);
-            const uintptr_t end     = base + hunk_size;
+            const uintptr_t base = reinterpret_cast<uintptr_t>(memory_block);
+            const uintptr_t end = base + hunk_size;
             const uintptr_t address = reinterpret_cast<uintptr_t>(record);
 
             if (address < base || address + sizeof(DestructorRecord) > end)

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <concepts>
 
-namespace tungsten::util::endian
+namespace tungsten::endian
 {
     // --- Target Architecture Configuration ---
     // Toggle these macros depending on your target machine architecture

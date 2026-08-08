@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdarg>
 
 namespace tungsten::sys
 {
@@ -10,6 +11,9 @@ namespace tungsten::sys
 
 	uint64_t time_us();
 
-	void error(const char* fmt, ...);
-	void* alloc_mem_block(int align, size_t size);
+	int native_threads_count();
+
+	/*call only once at init*/
+	void* alloc_mem_block(size_t align, size_t size);
+	void free_mem_block(void* ptr);
 }

@@ -1,7 +1,7 @@
 
 #include "compress.h"
 
-namespace tungsten::util::compress
+namespace tungsten::compress
 {
     int   compress(size_t size, const void* src, void* dst)
     {

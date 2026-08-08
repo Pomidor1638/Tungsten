@@ -3,7 +3,7 @@
 
 #include <cstring>
 
-namespace tungsten::util::binary
+namespace tungsten::binary
 {
 	enum class bin_endian_type
 	{

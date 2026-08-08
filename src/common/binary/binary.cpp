@@ -1,6 +1,6 @@
 #include "binary.h"
 
-namespace tungsten::util::binary
+namespace tungsten::binary
 {
 	binary_cursor::binary_cursor(size_t size)
 		: cursor_{ 0 }

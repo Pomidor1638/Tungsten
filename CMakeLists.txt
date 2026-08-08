@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 
 project(Tungsten LANGUAGES C CXX)
 
@@ -92,7 +92,7 @@ function(tg_contains_main OUT_VAR)
 
     foreach(src IN LISTS ARGN)
         get_filename_component(name "${src}" NAME)
-        if(name STREQUAL "main.cpp" OR name STREQUAL "main.c" OR name STREQUAL "main.cc" OR name STREQUAL "main.cxx")
+        if(name MATCHES "^main(_.+)?\\.(c|cc|cpp|cxx)$")
             set(found TRUE)
             break()
         endif()
@@ -196,9 +196,9 @@ function(tg_add_executable TARGET_NAME)
     endif()
 
     if(ARG_EXCLUDE_FROM_ALL)
-        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources})
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h" "src/runtime/common/sys/sysdefs.h")
     else()
-        add_executable(${TARGET_NAME} ${target_sources})
+        add_executable(${TARGET_NAME} ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h" "src/runtime/common/sys/sysdefs.h")
     endif()
 
     tg_apply_common_settings(${TARGET_NAME})
@@ -224,7 +224,6 @@ endfunction()
 set(TG_COMMON_BASE_SOURCES)
 
 tg_collect_sources(TG_COMMON_SHARED_SOURCES
-    "common/console"
     "common/formats"
     "common/allocator"
     "common/binary"
@@ -237,11 +236,12 @@ tg_collect_sources(TG_COMMON_SHARED_SOURCES
 )
 
 tg_collect_sources(TG_RUNTIME_COMMON_SOURCES
+    "runtime/common/console"
     "runtime/common/host"
     "runtime/common/net"
 )
 
-set(TG_GAME_CLIENT_MAIN "${TG_SOURCE_ROOT}/runtime/game/client/main.cpp")
+set(TG_GAME_CLIENT_MAIN "${TG_SOURCE_ROOT}/runtime/game/client/main_sdl.cpp")
 set(TG_GAME_SERVER_MAIN "${TG_SOURCE_ROOT}/runtime/game/server/main.cpp")
 
 set(TG_SYS_BACKEND "sdl" CACHE STRING "Tungsten sys backend")
@@ -262,9 +262,9 @@ foreach(src IN ITEMS
 endforeach()
 
 if(TG_SYS_BACKEND STREQUAL "sdl")
-    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/sys_sdl.cpp")
+    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/sdl/sys_sdl.cpp")
 elseif(TG_SYS_BACKEND STREQUAL "ps2")
-    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/sys_ps2.cpp")
+    set(TG_SYS_BACKEND_SOURCE "runtime/common/sys/ps2/sys_ps2.cpp")
 else()
     message(FATAL_ERROR "Unknown TG_SYS_BACKEND: ${TG_SYS_BACKEND}")
 endif()
@@ -404,6 +404,7 @@ tg_add_executable(test
 # =============================================================================
 
 set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT tengine)
+
 
 
 

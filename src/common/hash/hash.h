@@ -1,6 +1,6 @@
 #pragma once
 
-namespace tungsten::util::hash 
+namespace tungsten::hash 
 {
 	
 }

@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdint>
 
-namespace tungsten::util::str 
+namespace tungsten::string
 {
     template <size_t N>
 	class fixed_string final

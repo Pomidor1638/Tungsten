@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_main.h>
 
 #include "../common/sys/sys.h"
 #include "../common/host/host.h"
@@ -10,18 +12,12 @@ using namespace tungsten;
 
 int main(int argc, char** argv)
 {
-    host::params params{};
-    params.argc = argc;
-    params.argv = argv;
-    params.permanent_size = 32 * 1024 * 1024ull;
-    params.    level_size = 64 * 1024 * 1024ull;
-    params.    frame_size = 16 * 1024 * 1024ull;
-    params.  scratch_size = 16 * 1024 * 1024ull;
-
     if (!sys::init(argc, argv))
+    {
         return EXIT_FAILURE;
+    }
 
-    if (!host::init(params))
+    if (!host::init(argc, argv))
     {
         sys::quit();
         return EXIT_FAILURE;
