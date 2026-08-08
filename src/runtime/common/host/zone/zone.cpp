@@ -1,13 +1,10 @@
 
 #include "zone.h"
 
+#include "../../sys/sys.h"
+
 namespace tungsten::zone
 {
-
-    namespace
-    {
-        bool memory_initialized = false;
-    }
 
     allocator::LinearAllocator permanent_zone;
     allocator::LinearAllocator level_zone;
@@ -16,8 +13,10 @@ namespace tungsten::zone
 
     bool init(void* memory_ptr, size_t memory_size, size_t permanent_size, size_t level_size, size_t frame_size, size_t scratch_size)
     {
+        sys::printf("\t\tzone::init()");
         if (!memory_ptr)
         {
+            sys::printf(" -> failure: memory_ptr == nullptr\n");
             return false;
         }
 
@@ -25,6 +24,7 @@ namespace tungsten::zone
         
         if (total_requested > memory_size)
         {
+            sys::printf(" -> failure: total_requested > memory_size\n");
             return false;
         }
 
@@ -42,14 +42,14 @@ namespace tungsten::zone
 
         scratch_zone.setup_buffer(current_ptr, scratch_size);
 
-
+        sys::printf(" -> ok\n");
+        
         return true;
     }
 
     void quit()
     {
-        if (!memory_initialized)
-            return;
+        sys::printf("\t\tzone::quit() -> ok\n");
 
         permanent_zone.reset();
         level_zone.reset();

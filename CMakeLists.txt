@@ -196,9 +196,9 @@ function(tg_add_executable TARGET_NAME)
     endif()
 
     if(ARG_EXCLUDE_FROM_ALL)
-        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h" "src/runtime/common/sys/sysdefs.h")
+        add_executable(${TARGET_NAME} EXCLUDE_FROM_ALL ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h"  "src/runtime/common/sys/sys_event.h" "src/runtime/common/host/host_local.h" "src/runtime/common/host/host_args.cpp" "src/runtime/common/host/host_zone.cpp" "src/runtime/common/host/host_window.cpp")
     else()
-        add_executable(${TARGET_NAME} ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h" "src/runtime/common/sys/sysdefs.h")
+        add_executable(${TARGET_NAME} ${target_sources} "${TG_SOURCE_ROOT}/runtime/common/host/hostdefs.h"  "src/runtime/common/sys/sys_event.h" "src/runtime/common/host/host_local.h" "src/runtime/common/host/host_args.cpp" "src/runtime/common/host/host_zone.cpp" "src/runtime/common/host/host_window.cpp")
     endif()
 
     tg_apply_common_settings(${TARGET_NAME})

@@ -1,13 +1,14 @@
 
-#include "../sys.h"
-#include "../sysdefs.h"
-#include "../sys_local.h"
 
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 
 #include <SDL2/SDL.h>
+
+
+#include "../sys.h"
+#include "../sys_local.h"
 
 
 namespace tungsten::sys
@@ -18,18 +19,19 @@ namespace tungsten::sys
 
 	bool init(int argc, char** argv)
 	{
-		sys::printf("sys::init()\n");
+		printf("sys::\tinit()");
 		if (SDL_Init(SDL_INIT_EVERYTHING))
 		{
-			error("sys::init() : can't init SDL : %s\n", SDL_GetError());
+			printf(" -> failure : can't init SDL : %s\n", SDL_GetError());
 			return false;
 		}
+		printf(" -> ok\n");
 		return true;
 	}
 
 	void quit()
 	{
-		sys::printf("sys::quit()\n");
+		sys::printf("sys::quit() -> ok\n");
 		SDL_Quit();
 	}
 
@@ -55,7 +57,7 @@ namespace tungsten::sys
 		return result;
 	}
 
-	void error(const char* fmt, ...)
+	void panic(const char* fmt, ...)
 	{
 		static char error_text[1024];
 
@@ -67,7 +69,7 @@ namespace tungsten::sys
 		printf("%s\n", error_title);
 		printf("%s", error_text);
 
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SYS ERROR", error_text, nullptr);
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "SYSTEM PANIC", error_text, nullptr);
 
 		std::exit(EXIT_FAILURE);
 	}
@@ -90,6 +92,12 @@ namespace tungsten::sys
 #else
 		std::free(ptr);
 #endif
+	}
+
+
+	int native_threads_count()
+	{
+		return SDL_GetCPUCount();
 	}
 
 }

@@ -1,14 +1,13 @@
 
-#include "logger.h"
-#include "../../sys/sysdefs.h"
+#include "log.h"
+#include "../../sys/sys.h"
 
-namespace tungsten::logger
+namespace tungsten::log
 {
 	int printf(const char* fmt, ...)
 	{
 		return sys::printf(fmt);
 	}
-
 
 	void warning(const char* fmt, ...)
 	{

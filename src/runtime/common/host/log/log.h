@@ -1,7 +1,7 @@
 
 #pragma once
 
-namespace tungsten::logger
+namespace tungsten::log
 {
 	int printf(const char* fmt, ...);
 

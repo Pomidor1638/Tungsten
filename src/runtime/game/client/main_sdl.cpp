@@ -10,7 +10,7 @@
 
 using namespace tungsten;
 
-int main(int argc, char** argv)
+int main(int argc, char* argv[])
 {
     if (!sys::init(argc, argv))
     {
@@ -37,6 +37,8 @@ int main(int argc, char** argv)
 
     host::quit();
     sys::quit();
+
+    // sys::panic("Test Panic\n");
 
     return EXIT_SUCCESS;
 }

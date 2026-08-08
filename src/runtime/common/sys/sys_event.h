@@ -1,21 +1,21 @@
 
 #pragma once
 
-#include <cstdint>
-#include <cstdarg>
-
 namespace tungsten::sys
 {
-
-	void error(const char* fmt, ...);
-	int printf(const char* fmt, ...);
-	int vprintf(const char* fmt, va_list args);
-
-
 	enum class sys_event_type
 	{
 		none = 0,
 
+		quit,
+
+		key_up,
+		key_down,
+
+		mouse_wheel,
+		mouse_motion,
+
+		packet,
 	};
 
 	struct sys_event
@@ -26,4 +26,6 @@ namespace tungsten::sys
 
 		};
 	};
+
+	bool poll_event(sys_event& event);
 }
