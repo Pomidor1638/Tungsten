@@ -40,6 +40,11 @@ namespace tungsten::sys
 		return /*for us scale*/1'000'000 * SDL_GetPerformanceCounter() / /*ticks per second*/SDL_GetPerformanceFrequency();
 	}
 
+	double time_us_f()
+	{
+		return /*for us scale*/1'000'000.0 * SDL_GetPerformanceCounter() / /*ticks per second*/SDL_GetPerformanceFrequency();
+	}
+
 
 	int vprintf(const char* fmt, va_list args)
 	{

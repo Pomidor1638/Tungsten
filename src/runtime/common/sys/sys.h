@@ -13,6 +13,7 @@ namespace tungsten::sys
 	void quit();
 
 	uint64_t time_us();
+	double time_us_f();
 
 	int native_threads_count();
 

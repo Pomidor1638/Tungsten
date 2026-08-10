@@ -1,6 +1,7 @@
 
 
 #include "../sys/sys.h"
+#include "log/log.h"
 
 #include "host_local.h"
 #include "zone/zone.h"
@@ -17,22 +18,22 @@ namespace tungsten::host
 
 	bool zone_init()
 	{
-		sys::printf("\tzone_init()\n");
+		log::printf("\tzone_init()\n");
 
 		constexpr size_t align = 32;
 		memory_block_size = init_params.permanent_size + init_params.level_size + init_params.frame_size + init_params.scratch_size;
 
-		sys::printf("\t\talloc_memory_block(align: %llu, size: %llu)", align, memory_block_size);
+		log::printf("\t\talloc_memory_block(align: %llu, size: %llu)", align, memory_block_size);
 
 		memory_block = sys::alloc_mem_block(align, memory_block_size);
 
 		if (!memory_block)
 		{
-			sys::printf("%s memory_block == nullptr", title_failure);
+			log::printf("%s memory_block == nullptr", title_failure);
 			return false;
 		}
 
-		sys::printf(title_ok);
+		log::printf(title_ok);
 
 		return zone_initialized = zone::init(
 			memory_block,

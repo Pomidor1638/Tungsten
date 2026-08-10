@@ -146,10 +146,8 @@ int main()
     server_slot.snapshot(0, nullptr);
 
     std::cout << "[TEST] Step 4: Server initiates disconnect()..." << std::endl;
-    disconnect_reason reason{};
-    const char* kick_text = "kicked for being dumbass";
-    reason.size = static_cast<uint32_t>(std::strlen(kick_text));
-    std::memcpy(reason.data, kick_text, reason.size);
+    disconnect_reason reason{.data = "kicked, just for test" };
+    reason.size = static_cast<uint32_t>(std::strlen(reason.data));
 
     // --- (branch A) ---
     server_slot.disconnect(disconnect_type::kicked, reason);

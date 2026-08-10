@@ -7,6 +7,7 @@ namespace tungsten::console
 	enum class var_type
 	{
 		none = 0,
+
 		boolean,
 		floating,
 		integer,
@@ -33,6 +34,6 @@ namespace tungsten::console
 	int error(const char* fmt, ...);
 
 	bool execute(const void* cmd);
-
+	bool register_var(void* var, var_type type);
 }
 

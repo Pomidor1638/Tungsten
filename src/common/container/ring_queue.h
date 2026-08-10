@@ -7,11 +7,11 @@
 
 namespace tungsten::container
 {
-    template <typename T, std::size_t MaxSize>
+    template <typename T, std::size_t max_size>
     class ring_queue final
     {
     public:
-        static_assert(MaxSize > 0, "ring_queue capacity must be greater than zero");
+        static_assert(max_size > 0, "ring_queue capacity must be greater than zero");
 
         bool push(const T& value)
         {
@@ -72,7 +72,7 @@ namespace tungsten::container
 
         bool full() const
         {
-            return count == MaxSize;
+            return count == max_size;
         }
 
         std::size_t size() const
@@ -82,16 +82,16 @@ namespace tungsten::container
 
         static constexpr std::size_t capacity()
         {
-            return MaxSize;
+            return max_size;
         }
 
     private:
         static constexpr std::size_t next(std::size_t index)
         {
-            return (index + 1) % MaxSize;
+            return (index + 1) % max_size;
         }
 
-        std::array<T, MaxSize> items{};
+        std::array<T, max_size> items{};
         size_t head = 0;
         size_t tail = 0;
         size_t count = 0;

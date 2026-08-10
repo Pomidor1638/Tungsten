@@ -1,9 +1,8 @@
 
-#pragma once
 
 #include "host_local.h"
 
-#include "../sys/sys.h"
+#include "log/log.h"
 
 #include "window/window.h"
 
@@ -13,7 +12,7 @@ namespace tungsten::host
 
     namespace
     {
-        bool initialized = false;
+        bool window_initialized = false;
 
         struct window_params
         {
@@ -33,7 +32,7 @@ namespace tungsten::host
         bool load_window_params()
         {
 
-            sys::printf("\t\tload_window_params()");
+            log::printf("\t\tload_window_params()");
 
             win_params = window_params
             {
@@ -45,9 +44,9 @@ namespace tungsten::host
                 .fullscreen = false
             };
 
-            //sys::printf("%s can't load params", title_failure);
+            //log::printf("%s can't load params", title_failure);
 
-            sys::printf(title_ok);
+            log::printf(title_ok);
 
             return true;
         }
@@ -57,24 +56,24 @@ namespace tungsten::host
 
     bool window_init()
     {
-        sys::printf("\twindow_init()\n");
+        log::printf("\twindow_init()\n");
         
         if (!load_window_params()) return false;
         //if (!window::init(win_params.title, win_params.x_pos, win_params.y_pos, win_params.width, win_params.height, 0)) return false;
 
-        return initialized = true;
+        return window_initialized = true;
     }
 
     void window_quit()
     {
-        sys::printf("\twindow_quit()");
-        if (initialized)
+        log::printf("\twindow_quit()");
+        if (window_initialized)
         {
-            sys::printf(title_ok);
+            log::printf(title_ok);
         }
         else
         {
-            sys::printf(title_skip);
+            log::printf(title_skip);
         }
     }
 

@@ -1,6 +1,5 @@
-#pragma once
 
-namespace tungsten::util::compress 
+namespace tungsten::compress 
 {
     
 }
